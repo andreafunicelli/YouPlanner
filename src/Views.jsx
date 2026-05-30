@@ -229,15 +229,20 @@ function CoverageBar({ people, getEntries, date }) {
     const t = e[0].type; counts[t] = (counts[t] || 0) + 1;
   });
   const total = people.length;
-  const segs = [['turno','var(--c-turno)'],['disp','var(--line-strong)'],['sw','var(--c-sw)'],['reperibilita','var(--c-reper)'],['permesso','var(--c-permesso)'],['ferie','var(--c-ferie)'],['malattia','var(--c-malattia)']];
+  const active = counts.turno + counts.sw;
+  const oncall = counts.reperibilita;
+  const absent = counts.ferie + counts.malattia + counts.permesso;
+  const segs = [['turno','var(--c-turno)'],['sw','var(--c-sw)'],['reperibilita','var(--c-reper)'],['disp','var(--line-strong)'],['permesso','var(--c-permesso)'],['ferie','var(--c-ferie)'],['malattia','var(--c-malattia)']];
   return (
     <div>
       <div style={{ display: 'flex', height: 28, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--line)' }}>
         {segs.map(([k, col]) => counts[k] ? <div key={k} title={`${counts[k]} ${k}`} style={{ width: `${counts[k]/total*100}%`, background: col }}></div> : null)}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7, fontSize: 12, color: 'var(--text-muted)' }}>
-        <span><strong style={{ color: 'var(--c-turno-tx)' }}>{counts.turno + counts.disp}</strong> disponibili</span>
-        <span><strong style={{ color: 'var(--c-ferie-tx)' }}>{counts.ferie + counts.malattia + counts.permesso}</strong> assenti</span>
+        <span><strong style={{ color: 'var(--c-turno-tx)' }}>{active}</strong> in servizio</span>
+        {oncall > 0 && <span><strong style={{ color: 'var(--c-reper-tx)' }}>{oncall}</strong> reperibilità</span>}
+        {counts.disp > 0 && <span><strong>{counts.disp}</strong> non assegnati</span>}
+        <span><strong style={{ color: 'var(--c-ferie-tx)' }}>{absent}</strong> assenti</span>
       </div>
     </div>
   );
