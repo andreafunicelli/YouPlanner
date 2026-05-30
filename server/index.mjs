@@ -77,11 +77,18 @@ app.post('/api/assignments', requireUser, async (req, res) => {
 });
 
 app.post('/api/requests', requireUser, async (req, res) => {
-  if (req.user.role !== 'EMPLOYEE') return res.status(403).json({ error: 'EMPLOYEE_ONLY', message: 'Solo i dipendenti possono inserire richieste personali' });
-  const { type, from, to, time, note } = req.body || {};
+  if (!['EMPLOYEE', 'ADMIN'].includes(req.user.role)) return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo dipendenti e manager possono inserire richieste' });
+  const { type, from, to, time, note, empId: bodyEmpId } = req.body || {};
   if (!['ferie', 'permesso', 'malattia', 'sw'].includes(type)) return res.status(400).json({ error: 'BAD_TYPE', message: 'Tipo richiesta non valido' });
   if (!isRange(from, to)) return res.status(400).json({ error: 'BAD_DATES', message: 'Intervallo date non valido' });
-  const empId = req.user.employeeId;
+  let empId;
+  if (req.user.role === 'ADMIN') {
+    empId = bodyEmpId || req.user.employeeId;
+    const emp = req.state.people.find((p) => p.id === empId);
+    if (!emp || !canOperateTeam(req.state, req.user, emp.bu)) return res.status(403).json({ error: 'FORBIDDEN', message: 'Dipendente fuori ambito' });
+  } else {
+    empId = req.user.employeeId;
+  }
   const overlap = hasAbsenceOverlap(req.state, empId, from, to);
   if (overlap) return res.status(409).json({ error: 'REQUEST_OVERLAP', message: `Sovrapposizione con richiesta ${overlap.id}` });
   const days = type === 'ferie' || type === 'sw' ? businessDays(req.state, from, to) : undefined;

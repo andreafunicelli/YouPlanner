@@ -536,7 +536,7 @@ export default function App() {
           {role !== 'admin' && effectivePage==='calendario'   && <CalendarPage people={people} getEntries={getEntries} onAssign={doAssign} canEdit={canEdit} meId={role==='dipendente'?user.employeeId:null} th={th} showConflicts={t.mostraConflitti} vista={t.vista} />}
           {role !== 'admin' && effectivePage==='richieste'    && (role === 'dipendente'
             ? <RequestsEmployee me={user} reqs={reqs} onSubmit={submitReq} />
-            : <RequestsManager reqs={buReqs} getEntries={getEntries} onApprove={approve} onReject={doReject} scope={scope} canDecide={canManageOps} />)}
+            : <RequestsManager reqs={buReqs} getEntries={getEntries} onApprove={approve} onReject={doReject} scope={scope} canDecide={canManageOps} people={people} onSubmit={submitReq} />)}
           {role !== 'admin' && effectivePage==='reperibilita' && <OnCallView scope={scope} buFilter={viewBu} people={people} bus={busData} getEntries={getEntries} onToast={setToast} onRefresh={refresh} oncall={oncallData} />}
           {role !== 'admin' && effectivePage==='turni'        && <ShiftsView scope={scope} buFilter={viewBu} people={people} bus={busData} onToast={setToast} onRefresh={refresh} shifts={shiftsData} />}
           {role !== 'admin' && effectivePage==='chiusure'     && <ClosuresView scope={scope} closures={closuresData} holidays={holidaysData} people={peopleData} bus={busData} onToast={setToast} onRefresh={refresh} canEdit={canManageOps} />}

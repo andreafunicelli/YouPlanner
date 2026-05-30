@@ -122,9 +122,10 @@ function DecidedCard({ req }) {
   );
 }
 
-export function RequestsManager({ reqs, getEntries, onApprove, onReject, scope, canDecide = true }) {
+export function RequestsManager({ reqs, getEntries, onApprove, onReject, scope, canDecide = true, people, onSubmit }) {
   const [tab, setTab] = useState('pending');
   const [rejectReq, setRejectReq] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
   const list = reqs.filter((r) => r.status === tab);
   const counts = {
     pending: reqs.filter(r=>r.status==='pending').length,
@@ -134,13 +135,16 @@ export function RequestsManager({ reqs, getEntries, onApprove, onReject, scope, 
   return (
     <div className="fade-in">
       <SectionHead title="Richieste ferie e permessi" sub={scope}
-        right={<div className="seg">
+        right={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {people && onSubmit && <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Icon name="plus" size={16} sw={2.4} />Nuova richiesta</button>}
+          <div className="seg">
           {[['pending','In attesa'],['approved','Approvate'],['rejected','Rifiutate']].map(([k,l]) => (
             <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
               {l}{k==='pending'&&counts.pending?` · ${counts.pending}`:''}
             </button>
           ))}
-        </div>} />
+        </div>
+          </div>} />
       {list.length === 0
         ? <div className="card empty"><Icon name="inbox" size={30} /><div style={{ marginTop: 8, fontWeight: 600 }}>Nessuna richiesta {tab==='pending'?'in attesa':tab==='approved'?'approvata':'rifiutata'}.</div></div>
         : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(380px,1fr))', gap: 14 }}>
@@ -149,7 +153,73 @@ export function RequestsManager({ reqs, getEntries, onApprove, onReject, scope, 
               : <DecidedCard key={r.id} req={r} />)}
           </div>}
       {canDecide && rejectReq && <RejectModal req={rejectReq} onClose={() => setRejectReq(null)} onConfirm={(reason) => { onReject(rejectReq, reason); setRejectReq(null); }} />}
+      {showCreate && people && <ManagerCreateRequestModal people={people} onClose={() => setShowCreate(false)} onSubmit={(r) => { onSubmit(r); setShowCreate(false); }} />}
     </div>
+  );
+}
+
+function ManagerCreateRequestModal({ people, onClose, onSubmit }) {
+  const [empId, setEmpId] = useState(people[0]?.id || '');
+  const [type, setType] = useState('ferie');
+  const [from, setFrom] = useState('2026-06-15');
+  const [to, setTo] = useState('2026-06-17');
+  const [time, setTime] = useState('14:00–18:00');
+  const [note, setNote] = useState('');
+
+  const me = people.find((p) => p.id === empId);
+  const fromD = parse(from), toD = parse(to);
+  const valid = toD >= fromD;
+  let days = 0, blockHoliday = null;
+  if (valid) {
+    for (let d = new Date(fromD); d <= toD; d = addDays(d, 1)) {
+      const di = iso(d);
+      const hn = holidayName(di);
+      if (hn) blockHoliday = blockHoliday || hn + ' (' + d.getDate() + '/' + (d.getMonth() + 1) + ')';
+      else if (d.getDay() !== 0 && d.getDay() !== 6) days++;
+    }
+  }
+  const overBalance = me && type === 'ferie' && days > me.ferie;
+  const canSubmit = empId && valid && !overBalance && (type !== 'ferie' || days > 0);
+
+  return (
+    <Modal title="Crea richiesta per dipendente" icon={<Icon name="plus" size={20} color="var(--red)" />} iconBg="var(--red-tint)" onClose={onClose}
+      footer={<>
+        <button className="btn" onClick={onClose}>Annulla</button>
+        <button className="btn btn-primary" disabled={!canSubmit} onClick={() => onSubmit({
+          empId, type, from, to,
+          days: type === 'ferie' ? days : undefined,
+          hours: type !== 'ferie' ? 4 : undefined,
+          time: type !== 'ferie' ? time : undefined,
+          note,
+        })}>Crea richiesta</button>
+      </>}>
+      <div className="field">
+        <label>Dipendente *</label>
+        <select className="input" value={empId} onChange={(e) => setEmpId(e.target.value)}>
+          {people.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.job}</option>)}
+        </select>
+      </div>
+      <div className="seg" style={{ alignSelf: 'flex-start' }}>
+        {[['ferie','Ferie'],['permesso','Permesso'],['malattia','Malattia'],['sw','Smart working']].map(([k,l]) => (
+          <button key={k} className={type===k?'on':''} onClick={() => setType(k)}>{l}</button>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="field"><label>Dal</label><input type="date" className="input mono" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+        <div className="field"><label>Al</label><input type="date" className="input mono" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+      </div>
+      {type === 'permesso' && <div className="field"><label>Fascia oraria</label><input className="input" value={time} onChange={(e) => setTime(e.target.value)} /></div>}
+      <div className="field"><label>Note (facoltative)</label><textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Motivo o dettagli…"></textarea></div>
+      {me && valid && type === 'ferie' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          <span className="badge badge-gray">{days} giorni lavorativi</span>
+          <span style={{ color: 'var(--text-muted)' }}>saldo dopo: <strong style={{ color: overBalance ? 'var(--red)' : 'var(--c-turno-tx)' }}>{me.ferie - days} gg</strong></span>
+        </div>
+      )}
+      {blockHoliday && <div className="alert-banner alert-amber" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>Include <strong>{blockHoliday}</strong>: la festività è esclusa automaticamente dal conteggio.</div></div>}
+      {overBalance && <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>Saldo ferie insufficiente ({me.ferie} gg disponibili). Riduci il periodo.</div></div>}
+      {!valid && <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>La data finale deve essere successiva a quella iniziale.</div></div>}
+    </Modal>
   );
 }
 
