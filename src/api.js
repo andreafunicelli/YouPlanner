@@ -62,3 +62,7 @@ export async function changePassword(payload) { return api('/api/profile/passwor
 export async function updateClosureAssignment(closureId, payload) { return api(`/api/closures/${closureId}/assignment`, { method: 'POST', body: JSON.stringify(payload) }); }
 export async function bulkUpdateClosureAssignments(updates) { return api('/api/closures/bulk-assignment', { method: 'POST', body: JSON.stringify({ updates }) }); }
 export async function uploadAvatar(payload) { return api('/api/profile/avatar', { method: 'POST', body: JSON.stringify(payload) }); }
+export async function getAdminClosures() { return api('/api/admin/closures'); }
+export async function createAdminClosure(payload) { return api('/api/admin/closures', { method: 'POST', body: JSON.stringify(payload) }); }
+export async function updateAdminClosure(id, payload) { return api(`/api/admin/closures/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }); }
+export async function deleteAdminClosure(id) { return api(`/api/admin/closures/${id}`, { method: 'DELETE' }); }

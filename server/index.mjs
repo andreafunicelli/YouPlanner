@@ -429,6 +429,56 @@ app.post('/api/closures/bulk-assignment', requireUser, async (req, res) => {
   res.json({ state: scopedState(next, publicUser(next, req.user)) });
 });
 
+// --- Super Admin: CRUD closures ---
+app.get('/api/admin/closures', requireUser, (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo il Super Admin può gestire le chiusure' });
+  res.json({ closures: req.state.closures });
+});
+
+app.post('/api/admin/closures', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo il Super Admin può creare chiusure' });
+  const { date, to, label } = req.body || {};
+  if (!date || !label) return res.status(400).json({ error: 'MISSING_FIELDS', message: 'Data e label obbligatorie' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'INVALID_DATE', message: 'Formato data non valido (YYYY-MM-DD)' });
+  const next = clone(req.state);
+  const dates = daysBetween(date, to && to >= date ? to : date);
+  const created = [];
+  for (const d of dates) {
+    if (next.closures.some((c) => c.date === d)) continue;
+    const entry = { id: id('c'), date: d, label, presidio: [] };
+    next.closures.push(entry);
+    created.push(entry);
+  }
+  if (!created.length) return res.status(409).json({ error: 'ALL_DUPLICATES', message: 'Tutte le date esistono già come chiusure' });
+  await writeState(next);
+  res.json({ closures: created });
+});
+
+app.patch('/api/admin/closures/:id', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo il Super Admin può modificare le chiusure' });
+  const { label, date } = req.body || {};
+  const next = clone(req.state);
+  const idx = next.closures.findIndex((c) => c.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'NOT_FOUND', message: 'Chiusura non trovata' });
+  if (label) next.closures[idx].label = label;
+  if (date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'INVALID_DATE', message: 'Formato data non valido' });
+    next.closures[idx].date = date;
+  }
+  await writeState(next);
+  res.json({ closure: next.closures[idx] });
+});
+
+app.delete('/api/admin/closures/:id', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo il Super Admin può eliminare le chiusure' });
+  const next = clone(req.state);
+  const idx = next.closures.findIndex((c) => c.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'NOT_FOUND', message: 'Chiusura non trovata' });
+  next.closures.splice(idx, 1);
+  await writeState(next);
+  res.json({ ok: true });
+});
+
 
 app.use(express.static('dist'));
 app.get(/.*/, (_req, res) => res.sendFile('index.html', { root: 'dist' }));

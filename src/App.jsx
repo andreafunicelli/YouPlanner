@@ -4,7 +4,7 @@ import { Icon, Avatar, Pill, Popover, Toast, Modal } from './components.jsx';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakSlider, TweakColor } from './TweaksPanel.jsx';
 import { WeekView, DayView, MonthView } from './Calendar.jsx';
 import { RequestsManager, RequestsEmployee } from './Requests.jsx';
-import { Dashboard, OnCallView, ShiftsView, ClosuresView, AdminView, IntegrationsView } from './Views.jsx';
+import { Dashboard, OnCallView, ShiftsView, ClosuresView, AdminView, IntegrationsView, SuperAdminClosuresView } from './Views.jsx';
 import {
   PEOPLE, BUS, REQUESTS, NOTIFS, SHIFTS, ASSIGN, SUPERADMIN,
   TODAY, DOW, MONTHS, iso, parse, addDays, mondayOf,
@@ -431,12 +431,12 @@ export default function App() {
   const NAV = {
     manager:    [['dashboard','Panoramica','home'],['calendario','Calendario team','calendar'],['richieste','Richieste','inbox',pendingCount],['reperibilita','Reperibilità','phone'],['turni','Turni operativi','clock'],['chiusure','Chiusure & festività','building']],
     dipendente: [['dashboard','Panoramica','home'],['calendario','Calendario team','calendar'],['richieste','Le mie richieste','inbox'],['chiusure','Chiusure & festività','building']],
-    admin:      [['persone','Persone','users'],['integrazioni','Integrazioni','settings']],
+    admin:      [['persone','Persone','users'],['chiusure','Chiusure','building'],['integrazioni','Integrazioni','settings']],
   };
   const nav = NAV[role];
 
   // If superadmin and page not in their nav, redirect to persone
-  const adminPages = ['persone', 'integrazioni'];
+  const adminPages = ['persone', 'chiusure', 'integrazioni'];
   const effectivePage = role === 'admin' && !adminPages.includes(page) ? 'persone' : page;
 
   const doAssign = async (empId, date, entries) => {
@@ -530,6 +530,7 @@ export default function App() {
 
         <main className="content">
           {role === 'admin' && effectivePage === 'persone' && <AdminView onRefresh={refresh} onToast={setToast} people={peopleData} bus={busData} />}
+          {role === 'admin' && effectivePage === 'chiusure' && <SuperAdminClosuresView onToast={setToast} />}
           {role === 'admin' && effectivePage === 'integrazioni' && <IntegrationsView />}
           {role !== 'admin' && effectivePage==='dashboard'    && <Dashboard role={role} meId={role==='dipendente'?user.employeeId:null} people={people} getEntries={getEntries} th={th} notifs={buNotifs} reqs={role==='dipendente'?reqs:buReqs} shifts={role==='dipendente'?shiftsData:buShifts} oncall={role==='dipendente'?oncallData:(oncallData||[]).filter((o)=>people.some((p)=>p.id===o.empId))} onGoto={setPage} scope={scope} />}
           {role !== 'admin' && effectivePage==='calendario'   && <CalendarPage people={people} getEntries={getEntries} onAssign={doAssign} canEdit={canEdit} meId={role==='dipendente'?user.employeeId:null} th={th} showConflicts={t.mostraConflitti} vista={t.vista} />}

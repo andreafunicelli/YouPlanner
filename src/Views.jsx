@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Icon, Avatar, Pill, Modal, SectionHead } from './components.jsx';
-import { createOnCall, createShift, createPerson, updateClosureAssignment, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, createManagerEmployee } from './api.js';
+import { createOnCall, createShift, createPerson, updateClosureAssignment, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, createManagerEmployee, getAdminClosures, createAdminClosure, updateAdminClosure, deleteAdminClosure } from './api.js';
 import { dayConflict } from './Calendar.jsx';
 import {
   PEOPLE, BUS, SHIFTS, ONCALL, CLOSURES, HOLIDAYS, holidaysFor,
@@ -1020,6 +1020,172 @@ export function IntegrationsView() {
           <button className="btn" disabled>Configura Google Workspace (prossimamente)</button>
           <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L'integrazione Google Workspace sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+export function SuperAdminClosuresView({ onToast }) {
+  const [closures, setClosures] = useState(null);
+  const [selectedYear, setSelectedYear] = useState(2026);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [formFrom, setFormFrom] = useState('');
+  const [formTo, setFormTo] = useState('');
+  const [formLabel, setFormLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    try {
+      const data = await getAdminClosures();
+      setClosures(data.closures || []);
+    } catch (e) { setError(e.message); }
+  };
+
+  if (closures === null) { load(); return <div className="card empty">Caricamento…</div>; }
+
+  const currentYear = new Date().getFullYear();
+  const allYears = [...new Set(closures.map(c => Number(c.date.slice(0, 4))))].sort();
+  const minYear = allYears.length ? Math.min(allYears[0], currentYear) : currentYear;
+  const maxYear = allYears.length ? Math.max(allYears[allYears.length - 1], currentYear + 2) : currentYear + 2;
+
+  const filtered = closures.filter(c => c.date.startsWith(String(selectedYear))).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Group by label for display
+  const grouped = [];
+  let cur = null;
+  for (const c of filtered) {
+    if (cur && cur.label === c.label) { cur.dates.push(c.date); cur.items.push(c); }
+    else { if (cur) grouped.push(cur); cur = { label: c.label, dates: [c.date], items: [c] }; }
+  }
+  if (cur) grouped.push(cur);
+
+  const handleCreate = async () => {
+    if (!formFrom || !formLabel) { setError('Data inizio e motivo obbligatori'); return; }
+    setSaving(true); setError('');
+    try {
+      const res = await createAdminClosure({ date: formFrom, to: formTo || undefined, label: formLabel });
+      onToast?.(`${res.closures.length} chiusura/e create.`);
+      setShowCreate(false); setFormFrom(''); setFormTo(''); setFormLabel('');
+      setClosures(null);
+    } catch (e) { setError(e.message); } finally { setSaving(false); }
+  };
+
+  const handleEdit = async () => {
+    if (!editItem) return;
+    setSaving(true); setError('');
+    try {
+      await updateAdminClosure(editItem.id, { label: editLabel || undefined, date: editDate || undefined });
+      onToast?.('Chiusura aggiornata.');
+      setEditItem(null); setClosures(null);
+    } catch (e) { setError(e.message); } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (item) => {
+    if (!confirm(`Eliminare la chiusura del ${fmtRange(item.date, item.date)} (${item.label})?`)) return;
+    try {
+      await deleteAdminClosure(item.id);
+      onToast?.('Chiusura eliminata.');
+      setClosures(null);
+    } catch (e) { onToast?.(e.message); }
+  };
+
+  const handleDeleteGroup = async (group) => {
+    if (!confirm(`Eliminare tutte le ${group.items.length} chiusure "${group.label}" (${fmtRange(group.dates[0], group.dates[group.dates.length - 1])})?`)) return;
+    try {
+      for (const item of group.items) await deleteAdminClosure(item.id);
+      onToast?.(`${group.items.length} chiusure eliminate.`);
+      setClosures(null);
+    } catch (e) { onToast?.(e.message); }
+  };
+
+  return (
+    <div className="fade-in">
+      <SectionHead title="Gestione chiusure aziendali" sub="Super Admin" />
+      {error && <div className="alert-banner alert-red" style={{ marginBottom: 12, fontSize: 13 }}><Icon name="alert" size={15} /><div>{error}</div></div>}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, margin: '8px 0 16px' }}>
+        <button className="btn btn-sm" disabled={selectedYear <= minYear} onClick={() => setSelectedYear(y => y - 1)}>←</button>
+        <span style={{ fontWeight: 800, fontSize: 17, minWidth: 60, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{selectedYear}</span>
+        <button className="btn btn-sm" disabled={selectedYear >= maxYear} onClick={() => setSelectedYear(y => y + 1)}>→</button>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button className="btn btn-primary" onClick={() => { setShowCreate(true); setError(''); }}>+ Nuova chiusura</button>
+      </div>
+
+      {showCreate && (
+        <div className="card" style={{ marginBottom: 16, padding: 18 }}>
+          <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 12 }}>Crea chiusura</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 12, alignItems: 'end' }}>
+            <div className="field">
+              <label>Data inizio *</label>
+              <input className="input" type="date" value={formFrom} onChange={e => setFormFrom(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Data fine (opzionale)</label>
+              <input className="input" type="date" value={formTo} onChange={e => setFormTo(e.target.value)} />
+              <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>Se vuoto, crea 1 giorno</div>
+            </div>
+            <div className="field">
+              <label>Motivo *</label>
+              <input className="input" value={formLabel} onChange={e => setFormLabel(e.target.value)} placeholder="es. Chiusura estiva" />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button className="btn" onClick={() => setShowCreate(false)}>Annulla</button>
+            <button className="btn btn-primary" disabled={saving} onClick={handleCreate}>{saving ? 'Creazione…' : 'Crea'}</button>
+          </div>
+        </div>
+      )}
+
+      {editItem && (
+        <div className="card" style={{ marginBottom: 16, padding: 18 }}>
+          <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 12 }}>Modifica chiusura — {fmtRange(editItem.date, editItem.date)}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, alignItems: 'end' }}>
+            <div className="field">
+              <label>Data</label>
+              <input className="input" type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Motivo</label>
+              <input className="input" value={editLabel} onChange={e => setEditLabel(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button className="btn" onClick={() => setEditItem(null)}>Annulla</button>
+            <button className="btn btn-primary" disabled={saving} onClick={handleEdit}>{saving ? 'Salvataggio…' : 'Salva'}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5 }}>
+          Chiusure {selectedYear}
+          <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8, fontSize: 12.5 }}>({filtered.length} giorni, {grouped.length} gruppi)</span>
+        </div>
+        <table className="tbl">
+          <thead><tr><th>Periodo</th><th>Motivo</th><th>Giorni</th><th style={{ width: 120 }}>Azioni</th></tr></thead>
+          <tbody>
+            {grouped.map((g, gi) => (
+              <tr key={gi}>
+                <td className="mono">{fmtRange(g.dates[0], g.dates[g.dates.length - 1])}</td>
+                <td style={{ fontWeight: 600 }}>{g.label}</td>
+                <td>{g.items.length}</td>
+                <td>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn btn-sm" onClick={() => { setEditItem(g.items[0]); setEditLabel(g.label); setEditDate(g.items[0].date); }}>Modifica</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDeleteGroup(g)}>Elimina</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {grouped.length === 0 && <tr><td colSpan="4" className="empty">Nessuna chiusura per il {selectedYear}.</td></tr>}
+          </tbody>
+        </table>
       </div>
     </div>
   );
