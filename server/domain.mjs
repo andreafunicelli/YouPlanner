@@ -84,7 +84,10 @@ export function userScope(state, user) {
     const managed = state.bus.filter((b) => b.managerId === user.employeeId).map((b) => b.id);
     return { role: user.role, teamIds: managed, employeeIds: state.people.filter((p) => managed.includes(p.bu)).map((p) => p.id) };
   }
-  return { role: user.role, teamIds: [], employeeIds: user.employeeId ? [user.employeeId] : [] };
+  // Employee: include all BU colleagues so the calendar shows the full team
+  const myBu = user.employeeId ? state.people.find((p) => p.id === user.employeeId)?.bu : null;
+  const buColleagues = myBu ? state.people.filter((p) => p.bu === myBu).map((p) => p.id) : (user.employeeId ? [user.employeeId] : []);
+  return { role: user.role, teamIds: myBu ? [myBu] : [], employeeIds: buColleagues };
 }
 
 export function scopedState(state, user) {
