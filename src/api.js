@@ -51,4 +51,5 @@ export async function createPerson(payload) { return api('/api/admin/people', { 
 export async function getFaq() { return api('/api/faq'); }
 export async function changePassword(payload) { return api('/api/profile/password', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function updateClosureAssignment(closureId, payload) { return api(`/api/closures/${closureId}/assignment`, { method: 'POST', body: JSON.stringify(payload) }); }
+export async function bulkUpdateClosureAssignments(updates) { return api('/api/closures/bulk-assignment', { method: 'POST', body: JSON.stringify({ updates }) }); }
 export async function uploadAvatar(payload) { return api('/api/profile/avatar', { method: 'POST', body: JSON.stringify(payload) }); }

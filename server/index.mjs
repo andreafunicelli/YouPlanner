@@ -257,6 +257,21 @@ app.post('/api/closures/:id/assignment', requireUser, async (req, res) => {
   res.json({ closure: next.closures[idx], state: scopedState(next, publicUser(next, req.user)) });
 });
 
+app.post('/api/closures/bulk-assignment', requireUser, async (req, res) => {
+  if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ADMIN_ONLY', message: 'Solo i manager possono modificare le assegnazioni chiusure' });
+  const { updates } = req.body || {};
+  if (!Array.isArray(updates)) return res.status(400).json({ error: 'BAD_INPUT', message: 'Array updates obbligatorio' });
+  const next = clone(req.state);
+  for (const u of updates) {
+    const idx = next.closures.findIndex((c) => c.id === u.closureId);
+    if (idx >= 0 && Array.isArray(u.presidio)) {
+      next.closures[idx] = { ...next.closures[idx], presidio: u.presidio };
+    }
+  }
+  await writeState(next);
+  res.json({ state: scopedState(next, publicUser(next, req.user)) });
+});
+
 app.use(express.static('dist'));
 app.get(/.*/, (_req, res) => res.sendFile('index.html', { root: 'dist' }));
 

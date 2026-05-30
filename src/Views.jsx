@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Icon, Avatar, Pill, Modal, SectionHead } from './components.jsx';
-import { createOnCall, createShift, createPerson, updateClosureAssignment } from './api.js';
+import { createOnCall, createShift, createPerson, updateClosureAssignment, bulkUpdateClosureAssignments } from './api.js';
 import { dayConflict } from './Calendar.jsx';
 import {
   PEOPLE, BUS, SHIFTS, ONCALL, CLOSURES, HOLIDAYS,
@@ -338,47 +338,85 @@ function ShiftModal({ buFilter, people = [], bus, onClose, onToast, onRefresh })
 }
 
 /* ---------- CHIUSURE & FESTIVITÀ ---------- */
-export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap = HOLIDAYS, people = PEOPLE }) {
-  const [expandedClosure, setExpandedClosure] = useState(null);
-  const [editAssignments, setEditAssignments] = useState({});
+export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap = HOLIDAYS, people = PEOPLE, bus = BUS, onToast, onRefresh, canEdit = true }) {
+  const [expandedGi, setExpandedGi] = useState(null);
+  const [gridEdits, setGridEdits] = useState({});
+  const [saving, setSaving] = useState(false);
   const holidays = Object.entries(holidaysMap || {}).filter(([d]) => parse(d) >= new Date(2026,4,1)).sort();
 
-  // Group closures by label for date ranges
-  const groupedClosures = [];
-  const sortedClosures = [...(closures || [])].sort((a, b) => a.date.localeCompare(b.date));
-  let current = null;
-  for (const c of sortedClosures) {
-    if (current && current.label === c.label) {
-      current.dates.push(c.date);
-      // merge presidio
-      c.presidio.forEach(id => { if (!current.allPresidio.includes(id)) current.allPresidio.push(id); });
+  // Group closures by label
+  const grouped = [];
+  const sorted = [...(closures || [])].sort((a, b) => a.date.localeCompare(b.date));
+  let cur = null;
+  for (const c of sorted) {
+    if (cur && cur.label === c.label) {
+      cur.dates.push(c.date);
+      cur.items.push(c);
     } else {
-      if (current) groupedClosures.push(current);
-      current = { label: c.label, dates: [c.date], allPresidio: [...c.presidio], items: [c] };
+      if (cur) grouped.push(cur);
+      cur = { label: c.label, dates: [c.date], items: [c] };
     }
   }
-  if (current) groupedClosures.push(current);
+  if (cur) grouped.push(cur);
 
-  const handleToggleAssignment = (closureItem, empId) => {
-    const key = closureItem.date || closureItem.id;
-    const current = editAssignments[key] || { presidio: [...(closureItem.presidio || [])] };
-    const idx = current.presidio.indexOf(empId);
-    if (idx >= 0) current.presidio.splice(idx, 1);
-    else current.presidio.push(empId);
-    setEditAssignments({ ...editAssignments, [key]: { ...current } });
+  const getEdit = (closureId) => gridEdits[closureId] ?? null;
+  const isPresidio = (closureId, empId) => {
+    const e = getEdit(closureId);
+    if (e) return e.includes(empId);
+    const item = sorted.find(c => c.id === closureId);
+    return item ? item.presidio.includes(empId) : false;
   };
 
-  const handleSaveAssignment = async (closureItem) => {
-    const key = closureItem.date || closureItem.id;
-    const assignment = editAssignments[key];
-    if (!assignment) return;
+  const toggleCell = (closureId, empId) => {
+    const current = getEdit(closureId) ?? (sorted.find(c => c.id === closureId)?.presidio || []);
+    const idx = current.indexOf(empId);
+    const next = idx >= 0 ? current.filter(id => id !== empId) : [...current, empId];
+    setGridEdits(prev => ({ ...prev, [closureId]: next }));
+  };
+
+  const setAll = (group, empId, value) => {
+    const edits = {};
+    for (const item of group.items) {
+      const current = getEdit(item.id) ?? [...item.presidio];
+      if (value && !current.includes(empId)) current.push(empId);
+      if (!value) edits[item.id] = current.filter(id => id !== empId);
+      else edits[item.id] = current;
+    }
+    setGridEdits(prev => ({ ...prev, ...edits }));
+  };
+
+  const setAllFerie = (group) => {
+    const edits = {};
+    for (const item of group.items) edits[item.id] = [];
+    setGridEdits(prev => ({ ...prev, ...edits }));
+  };
+
+  const setAllPresidio = (group) => {
+    const edits = {};
+    for (const item of group.items) edits[item.id] = people.map(p => p.id);
+    setGridEdits(prev => ({ ...prev, ...edits }));
+  };
+
+  const handleSave = async (group) => {
+    setSaving(true);
     try {
-      await updateClosureAssignment(closureItem.id || closureItem.date, { presidio: assignment.presidio });
-      setExpandedClosure(null);
+      const updates = group.items.map(item => ({
+        closureId: item.id,
+        presidio: getEdit(item.id) ?? item.presidio,
+      }));
+      await bulkUpdateClosureAssignments(updates);
+      setGridEdits({});
+      setExpandedGi(null);
+      onToast?.('Assegnazioni chiusure salvate.');
+      onRefresh?.();
     } catch (err) {
-      // silently fail for now
+      onToast?.(err.message);
+    } finally {
+      setSaving(false);
     }
   };
+
+  const DOW6 = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
 
   return (
     <div className="fade-in">
@@ -387,62 +425,93 @@ export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap
         <div className="card">
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5 }}>Chiusure aziendali</div>
           <table className="tbl">
-            <thead><tr><th>Periodo</th><th>Motivo</th><th>Presidio</th><th>In ferie</th></tr></thead>
-            <tbody>{groupedClosures.map((group, gi) => {
-              const isExpanded = expandedClosure === gi;
-              const fromDate = group.dates[0];
-              const toDate = group.dates[group.dates.length - 1];
-              const editKey = group.items[0]?.date || group.items[0]?.id;
-              const editState = editAssignments[editKey] || { presidio: group.allPresidio };
-              const feriePeople = people.filter(p => !editState.presidio.includes(p.id));
+            <thead><tr><th>Periodo</th><th>Motivo</th><th>Presidio</th></tr></thead>
+            <tbody>{grouped.map((g, gi) => {
+              const from = g.dates[0], to = g.dates[g.dates.length - 1];
+              const samplePresidio = g.items[0]?.presidio || [];
               return (
-                <tr key={gi} style={{ cursor: 'pointer' }} onClick={() => setExpandedClosure(isExpanded ? null : gi)}>
-                  <td className="mono">{fmtRange(fromDate, toDate)}</td>
-                  <td style={{ fontWeight: 600 }}>{group.label}</td>
-                  <td>{editState.presidio.length
-                    ? <div style={{ display: 'flex' }}>{editState.presidio.map((id, i) => <span key={id} style={{ marginLeft: i ? -6 : 0 }}><Avatar p={people.find((p) => p.id === id) || getPerson(id)} size={28} /></span>)}</div>
-                    : <span className="badge badge-gray">Nessuno</span>}</td>
-                  <td>{feriePeople.length === people.length
-                    ? <span className="badge badge-gray">Tutti in ferie</span>
-                    : <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{feriePeople.length} persone</span>}</td>
+                <tr key={gi} style={{ cursor: canEdit ? 'pointer' : 'default' }} onClick={() => { if (canEdit) { setGridEdits({}); setExpandedGi(expandedGi === gi ? null : gi); } }}>
+                  <td className="mono">{fmtRange(from, to)}</td>
+                  <td style={{ fontWeight: 600 }}>{g.label}</td>
+                  <td>{samplePresidio.length
+                    ? <div style={{ display: 'flex' }}>{samplePresidio.slice(0,4).map((id, i) => <span key={id} style={{ marginLeft: i ? -6 : 0 }}><Avatar p={people.find((p) => p.id === id) || getPerson(id)} size={26} /></span>)}{samplePresidio.length > 4 && <span style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 4 }}>+{samplePresidio.length - 4}</span>}</div>
+                    : <span className="badge badge-gray">Tutti in ferie</span>}</td>
                 </tr>
               );
             })}
-            {groupedClosures.length === 0 && <tr><td colSpan="4" className="empty">Nessuna chiusura programmata.</td></tr>}
+            {grouped.length === 0 && <tr><td colSpan="3" className="empty">Nessuna chiusura programmata.</td></tr>}
             </tbody>
           </table>
-          {expandedClosure !== null && groupedClosures[expandedClosure] && (
-            <div style={{ padding: '14px 18px', borderTop: '1px solid var(--line)', background: 'var(--surface-2)' }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 10 }}>Assegna presidio per: {groupedClosures[expandedClosure].label}</div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {people.map(p => {
-                  const editKey = groupedClosures[expandedClosure].items[0]?.date || groupedClosures[expandedClosure].items[0]?.id;
-                  const editState = editAssignments[editKey] || { presidio: groupedClosures[expandedClosure].allPresidio };
-                  const isPresidio = editState.presidio.includes(p.id);
-                  return (
-                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 8, background: 'var(--surface)', border: '1px solid var(--line)' }}>
-                      <Avatar p={p} size={28} />
-                      <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{p.name}</span>
-                      <button
-                        className={'btn btn-sm' + (isPresidio ? ' btn-primary' : '')}
-                        onClick={(e) => { e.stopPropagation(); handleToggleAssignment(groupedClosures[expandedClosure].items[0], p.id); }}
-                        style={{ minWidth: 70 }}
-                      >
-                        {isPresidio ? 'Presidio' : 'Ferie'}
-                      </button>
-                    </div>
-                  );
-                })}
+
+          {expandedGi !== null && grouped[expandedGi] && (() => {
+            const g = grouped[expandedGi];
+            return (
+              <div style={{ padding: '14px 18px', borderTop: '1px solid var(--line)', background: 'var(--surface-2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  <strong style={{ fontSize: 14 }}>{g.label}</strong>
+                  <span className="spacer" />
+                  {canEdit && <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setAllFerie(g); }}>Tutti in ferie</button>
+                    <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setAllPresidio(g); }}>Tutti in presidio</button>
+                  </div>}
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="tbl" style={{ minWidth: 60 + g.dates.length * 52 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ minWidth: 140, position: 'sticky', left: 0, background: 'var(--surface-2)', zIndex: 2 }}>Persona</th>
+                        {g.dates.map(d => {
+                          const D = parse(d);
+                          return <th key={d} style={{ textAlign: 'center', minWidth: 50, fontSize: 11 }}>
+                            <div>{DOW6[(D.getDay()+6)%7]}</div>
+                            <div style={{ fontWeight: 800 }}>{D.getDate()}</div>
+                          </th>;
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {people.map(p => (
+                        <tr key={p.id}>
+                          <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <Avatar p={p} size={24} />
+                              <span style={{ fontWeight: 600, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{p.name}</span>
+                            </div>
+                          </td>
+                          {g.items.map(item => {
+                            const on = isPresidio(item.id, p.id);
+                            return (
+                              <td key={item.id} style={{ textAlign: 'center', padding: 4 }}>
+                                {canEdit ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); toggleCell(item.id, p.id); }}
+                                    style={{
+                                      width: 36, height: 28, borderRadius: 6, border: '1px solid ' + (on ? 'var(--c-turno)' : 'var(--line)'),
+                                      background: on ? 'var(--c-turno-bg)' : 'var(--surface)', color: on ? 'var(--c-turno-tx)' : 'var(--text-faint)',
+                                      cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                    }}
+                                  >{on ? '✓' : '—'}</button>
+                                ) : (
+                                  <span style={{ fontSize: 11, color: on ? 'var(--c-turno-tx)' : 'var(--text-faint)' }}>{on ? '✓' : '—'}</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {canEdit && <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="btn" onClick={(e) => { e.stopPropagation(); setGridEdits({}); setExpandedGi(null); }}>Annulla</button>
+                  <button className="btn btn-primary" disabled={saving} onClick={(e) => { e.stopPropagation(); handleSave(g); }}>{saving ? 'Salvataggio…' : 'Salva assegnazioni'}</button>
+                </div>}
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button className="btn" onClick={(e) => { e.stopPropagation(); setExpandedClosure(null); }}>Annulla</button>
-                <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); handleSaveAssignment(groupedClosures[expandedClosure].items[0]); }}>Salva assegnazioni</button>
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
         <div className="card">
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5 }}>Festività nazionali 2026</div>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5 }}>Festività nazionali</div>
           <table className="tbl">
             <thead><tr><th>Data</th><th>Festività</th></tr></thead>
             <tbody>{holidays.map(([d, name]) => (
@@ -578,3 +647,4 @@ function PersonModal({ bus, onClose, onRefresh }) {
     </Modal>
   );
 }
+

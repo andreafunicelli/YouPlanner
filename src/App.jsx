@@ -231,7 +231,7 @@ function UserMenu({ user, role, onProfile, onLogout }) {
   const ref = useRef(null);
   const cur = role === 'admin' ? SUPERADMIN : user;
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', zIndex: 45 }}>
       <button className="btn" ref={ref} onClick={() => setOpen((v) => !v)} style={{ paddingLeft: 6 }}>
         <Avatar p={cur} size={26} />
         <span style={{ textAlign: 'left', lineHeight: 1.1 }}>
@@ -522,7 +522,7 @@ export default function App() {
             : <RequestsManager reqs={buReqs} getEntries={getEntries} onApprove={approve} onReject={doReject} scope={scope} canDecide={canManageOps} />)}
           {role !== 'admin' && effectivePage==='reperibilita' && <OnCallView scope={scope} buFilter={viewBu} people={people} bus={busData} getEntries={getEntries} onToast={setToast} onRefresh={refresh} oncall={oncallData} />}
           {role !== 'admin' && effectivePage==='turni'        && <ShiftsView scope={scope} buFilter={viewBu} people={people} bus={busData} onToast={setToast} onRefresh={refresh} shifts={shiftsData} />}
-          {role !== 'admin' && effectivePage==='chiusure'     && <ClosuresView scope={scope} closures={closuresData} holidays={holidaysData} people={peopleData} />}
+          {role !== 'admin' && effectivePage==='chiusure'     && <ClosuresView scope={scope} closures={closuresData} holidays={holidaysData} people={peopleData} bus={busData} onToast={setToast} onRefresh={refresh} canEdit={canManageOps} />}
         </main>
       </div>
 
