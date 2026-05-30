@@ -230,9 +230,19 @@ function UserMenu({ user, role, onProfile, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const cur = role === 'admin' ? SUPERADMIN : user;
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
   return (
-    <div style={{ position: 'relative', zIndex: 45 }}>
-      <button className="btn" ref={ref} onClick={() => setOpen((v) => !v)} style={{ paddingLeft: 6 }}>
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button className="btn" onClick={() => setOpen((v) => !v)} style={{ paddingLeft: 6 }}>
         <Avatar p={cur} size={26} />
         <span style={{ textAlign: 'left', lineHeight: 1.1 }}>
           <span style={{ display: 'block', fontSize: 13 }}>{cur.name}</span>
@@ -241,7 +251,7 @@ function UserMenu({ user, role, onProfile, onLogout }) {
         <Icon name="chevD" size={15} />
       </button>
       {open && (
-        <Popover anchorRef={ref} onClose={() => setOpen(false)} width={220}>
+        <div className="pop" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 220, zIndex: 100 }}>
           <div style={{ padding: 7 }}>
             <button className="nav-item" style={{ color: 'var(--text)', borderRadius: 9 }} onClick={() => { onProfile(); setOpen(false); }}>
               <Icon name="settings" size={18} />
@@ -252,7 +262,7 @@ function UserMenu({ user, role, onProfile, onLogout }) {
               <span style={{ flex: 1, textAlign: 'left', fontWeight: 600, fontSize: 13 }}>Logout</span>
             </button>
           </div>
-        </Popover>
+        </div>
       )}
     </div>
   );
