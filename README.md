@@ -1,6 +1,8 @@
-# PeoplePlanner / YouPlanner
+# YouPlanner
 
 Applicazione operativa per pianificazione persone, ferie/permessi, reperibilità, turni, festività italiane e chiusure aziendali.
+
+Repository: https://github.com/andreafunicelli/YouPlanner
 
 Questa versione mantiene il frontend React/Vite generato con ClaudeCode e usa un backend locale Express con persistenza JSON per rendere reali login, scope per ruolo, richieste, decisioni manageriali, assegnazioni calendario, reperibilità, turni, notifiche, FAQ e profilo utente.
 
