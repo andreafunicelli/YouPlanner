@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { bootstrap, login, setToken, getToken, DEMO_CREDENTIALS, decideRequest, createRequest, saveAssignment, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar } from './api.js';
+import { bootstrap, login, setToken, getToken, DEMO_CREDENTIALS, decideRequest, createRequest, saveAssignment, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar, createManagerEmployee } from './api.js';
 import { Icon, Avatar, Pill, Popover, Toast, Modal } from './components.jsx';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakSlider, TweakColor } from './TweaksPanel.jsx';
 import { WeekView, DayView, MonthView } from './Calendar.jsx';
@@ -357,6 +357,7 @@ export default function App() {
   const [holidaysData, setHolidaysData] = useState({});
   const [adminBu, setAdminBu] = useState(null);
   const [toast, setToast] = useState(null);
+  const [createEmpOpen, setCreateEmpOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   const applyBootstrap = (data) => {
@@ -389,7 +390,7 @@ export default function App() {
       await login(cred.email, cred.password);
       const data = await bootstrap();
       applyBootstrap(data);
-      setPage(kind === 'dipendente' ? 'calendario' : 'dashboard');
+      setPage(kind === 'dipendente' ? 'dashboard' : 'dashboard');
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
@@ -429,7 +430,7 @@ export default function App() {
 
   const NAV = {
     manager:    [['dashboard','Panoramica','home'],['calendario','Calendario team','calendar'],['richieste','Richieste','inbox',pendingCount],['reperibilita','Reperibilità','phone'],['turni','Turni operativi','clock'],['chiusure','Chiusure & festività','building']],
-    dipendente: [['calendario','Calendario team','calendar'],['richieste','Le mie richieste','inbox'],['chiusure','Chiusure & festività','building']],
+    dipendente: [['dashboard','Panoramica','home'],['calendario','Calendario team','calendar'],['richieste','Le mie richieste','inbox'],['chiusure','Chiusure & festività','building']],
     admin:      [['persone','Persone','users'],['integrazioni','Integrazioni','settings']],
   };
   const nav = NAV[role];
@@ -481,6 +482,11 @@ export default function App() {
         </div>
         <nav className="nav"><div className="nav-label">Operatività</div><NavList /></nav>
         <div className="nav-foot">
+          {role === 'manager' && (
+            <button className="btn btn-sm" style={{ width: '100%', marginBottom: 8 }} onClick={() => setCreateEmpOpen(true)}>
+              <Icon name="plus" size={14} sw={2.4} />Crea dipendente
+            </button>
+          )}
           <div style={{ display:'flex', alignItems:'center', gap:9, color:'#C9C2BC', fontSize:12 }}>
             <Icon name="building" size={15} />
             <span style={{ flex:1 }}>{role==='admin' ? `${busData.length} Business Unit` : (myBu ? buById(myBu).name : 'Nessuna Business Unit')}</span>
@@ -523,9 +529,9 @@ export default function App() {
         </header>
 
         <main className="content">
-          {role === 'admin' && effectivePage === 'persone' && <AdminView onRefresh={refresh} people={peopleData} bus={busData} />}
+          {role === 'admin' && effectivePage === 'persone' && <AdminView onRefresh={refresh} onToast={setToast} people={peopleData} bus={busData} />}
           {role === 'admin' && effectivePage === 'integrazioni' && <IntegrationsView />}
-          {role !== 'admin' && effectivePage==='dashboard'    && <Dashboard people={people} getEntries={getEntries} th={th} notifs={buNotifs} reqs={buReqs} shifts={buShifts} onGoto={setPage} scope={scope} />}
+          {role !== 'admin' && effectivePage==='dashboard'    && <Dashboard role={role} meId={role==='dipendente'?user.employeeId:null} people={people} getEntries={getEntries} th={th} notifs={buNotifs} reqs={role==='dipendente'?reqs:buReqs} shifts={role==='dipendente'?shiftsData:buShifts} oncall={role==='dipendente'?oncallData:(oncallData||[]).filter((o)=>people.some((p)=>p.id===o.empId))} onGoto={setPage} scope={scope} />}
           {role !== 'admin' && effectivePage==='calendario'   && <CalendarPage people={people} getEntries={getEntries} onAssign={doAssign} canEdit={canEdit} meId={role==='dipendente'?user.employeeId:null} th={th} showConflicts={t.mostraConflitti} vista={t.vista} />}
           {role !== 'admin' && effectivePage==='richieste'    && (role === 'dipendente'
             ? <RequestsEmployee me={user} reqs={reqs} onSubmit={submitReq} />
@@ -553,8 +559,36 @@ export default function App() {
 
       {/* Profile modal rendered at app level, opened from UserMenu */}
       {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} onToast={setToast} onUserUpdate={(data) => { if (data.state) applyBootstrap(data.state); else if (data.user) setApiUser(data.user); }} />}
+      {createEmpOpen && <ManagerCreateEmployeeModal onClose={() => setCreateEmpOpen(false)} onToast={setToast} onRefresh={refresh} />}
 
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
     </div>
+  );
+}
+
+function ManagerCreateEmployeeModal({ onClose, onToast, onRefresh }) {
+  const [form, setForm] = useState({ name: '', email: '', password: '', job: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const submit = async () => {
+    setSaving(true); setError('');
+    try {
+      await createManagerEmployee(form);
+      onToast?.('Dipendente creato con successo.');
+      onRefresh?.();
+      onClose();
+    } catch (err) { setError(err.message); setSaving(false); }
+  };
+  return (
+    <Modal title="Crea dipendente" icon={<Icon name="plus" size={19} color="var(--red)" />} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Annulla</button><button className="btn btn-primary" disabled={saving || !form.name || !form.email || !form.password} onClick={submit}>{saving ? 'Creazione…' : 'Crea dipendente'}</button></>}>
+      {error && <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>{error}</div></div>}
+      <div className="field"><label>Nome completo</label><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="es. Mario Rossi" /></div>
+      <div className="field"><label>Email</label><input className="input" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="mario@azienda.it" /></div>
+      <div className="field"><label>Password</label><input className="input" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="Min 6 caratteri" /></div>
+      <div className="field"><label>Mansione</label><input className="input" value={form.job} onChange={(e) => set('job', e.target.value)} placeholder="Dipendente" /></div>
+      <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>Il dipendente verrà assegnato automaticamente alla tua Business Unit.</div></div>
+    </Modal>
   );
 }

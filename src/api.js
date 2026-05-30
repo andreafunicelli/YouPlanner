@@ -48,6 +48,15 @@ export async function saveAssignment(payload) { return api('/api/assignments', {
 export async function createOnCall(payload) { return api('/api/oncall', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function createShift(payload) { return api('/api/shifts', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function createPerson(payload) { return api('/api/admin/people', { method: 'POST', body: JSON.stringify(payload) }); }
+export async function getAdminUsers() { return api('/api/admin/users'); }
+export async function createAdminUser(payload) { return api('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }); }
+export async function updateAdminUser(id, payload) { return api(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }); }
+export async function deleteAdminUser(id) { return api(`/api/admin/users/${id}`, { method: 'DELETE' }); }
+export async function getAdminBus() { return api('/api/admin/bus'); }
+export async function createAdminBu(payload) { return api('/api/admin/bus', { method: 'POST', body: JSON.stringify(payload) }); }
+export async function updateAdminBu(id, payload) { return api(`/api/admin/bus/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }); }
+export async function deleteAdminBu(id) { return api(`/api/admin/bus/${id}`, { method: 'DELETE' }); }
+export async function createManagerEmployee(payload) { return api('/api/manager/people', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function getFaq() { return api('/api/faq'); }
 export async function changePassword(payload) { return api('/api/profile/password', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function updateClosureAssignment(closureId, payload) { return api(`/api/closures/${closureId}/assignment`, { method: 'POST', body: JSON.stringify(payload) }); }

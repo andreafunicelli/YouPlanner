@@ -177,17 +177,174 @@ app.post('/api/shifts', requireUser, async (req, res) => {
   res.status(201).json({ shift: row, state: scopedState(next, publicUser(next, req.user)) });
 });
 
-app.post('/api/admin/people', requireUser, async (req, res) => {
+// --- SUPER ADMIN: Users CRUD ---
+app.get('/api/admin/users', requireUser, (req, res) => {
   if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo Super Admin' });
-  const { name, bu, role = 'dipendente', job = 'Dipendente', ferie = 26, permessi = 32 } = req.body || {};
-  if (!name || !bu || !req.state.bus.some((b) => b.id === bu)) return res.status(400).json({ error: 'BAD_INPUT', message: 'Nome e BU validi obbligatori' });
-  const next = clone(req.state);
-  const parts = name.split(' ');
-  const emp = { id: id('e'), name, bu, role, job, ferie: Number(ferie), permessi: Number(permessi), ferieTot: 26, permessiTot: 32, initials: ((parts[0]?.[0] || 'P') + (parts.at(-1)?.[0] || 'P')).toUpperCase(), av: '#5B6472' };
-  next.people.push(emp);
-  await writeState(next);
-  res.status(201).json({ person: emp, state: scopedState(next, publicUser(next, req.user)) });
+  const users = req.state.users.map((u) => {
+    const emp = u.employeeId ? req.state.people.find((p) => p.id === u.employeeId) : null;
+    return { id: u.id, email: u.email, role: u.role, employeeId: u.employeeId, name: u.name || emp?.name, job: u.job || emp?.job, bu: emp?.bu, initials: u.initials || emp?.initials, av: u.av || emp?.av };
+  });
+  res.json({ users });
 });
+
+app.post('/api/admin/users', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo Super Admin' });
+  const { email, password, role, name, bu, job, ferie, permessi } = req.body || {};
+  if (!email || !password || !role || !name) return res.status(400).json({ error: 'BAD_INPUT', message: 'Email, password, ruolo e nome sono obbligatori' });
+  if (!['ADMIN', 'EMPLOYEE'].includes(role)) return res.status(400).json({ error: 'BAD_ROLE', message: 'Ruolo deve essere ADMIN o EMPLOYEE' });
+  if (req.state.users.some((u) => u.email === email)) return res.status(409).json({ error: 'DUPLICATE_EMAIL', message: 'Email già registrata' });
+  const next = clone(req.state);
+  const newUserId = id('u');
+  let empId = null;
+  const parts = name.split(' ');
+  const initials = ((parts[0]?.[0] || 'P') + (parts.at(-1)?.[0] || 'P')).toUpperCase();
+  if (bu) {
+    if (!next.bus.some((b) => b.id === bu)) return res.status(400).json({ error: 'BAD_BU', message: 'Business Unit non valida' });
+    empId = id('e');
+    next.people.push({
+      id: empId, name, bu, role: role === 'ADMIN' ? 'manager' : 'dipendente', job: job || (role === 'ADMIN' ? 'BU Manager' : 'Dipendente'),
+      ferie: Number(ferie || 26), permessi: Number(permessi || 32), ferieTot: 26, permessiTot: 32, initials, av: '#5B6472'
+    });
+  }
+  next.users.push({
+    id: newUserId, email, password, role, employeeId: empId, name, job: job || (role === 'ADMIN' ? 'BU Manager' : 'Dipendente'), initials, av: '#5B6472'
+  });
+  if (role === 'ADMIN' && bu) {
+    const buIdx = next.bus.findIndex((b) => b.id === bu);
+    if (buIdx >= 0) next.bus[buIdx] = { ...next.bus[buIdx], managerId: empId };
+  }
+  await writeState(next);
+  const created = next.users.find((u) => u.id === newUserId);
+  res.status(201).json({ user: { ...created, password: undefined, bu }, state: { ...scopedState(next, publicUser(next, req.user)), allBus: next.bus } });
+});
+
+app.patch('/api/admin/users/:id', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo Super Admin' });
+  const { email, password, role, name, job, bu, ferie, permessi } = req.body || {};
+  const next = clone(req.state);
+  const uidx = next.users.findIndex((u) => u.id === req.params.id);
+  if (uidx < 0) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utente non trovato' });
+  const user = next.users[uidx];
+  if (user.role === 'SUPER_ADMIN') return res.status(403).json({ error: 'FORBIDDEN', message: 'Non puoi modificare il Super Admin' });
+  if (email && next.users.some((u) => u.email === email && u.id !== user.id)) return res.status(409).json({ error: 'DUPLICATE_EMAIL', message: 'Email già registrata' });
+  const updates = {};
+  if (email) updates.email = email;
+  if (password) updates.password = password;
+  if (name) updates.name = name;
+  if (job) updates.job = job;
+  if (role && ['ADMIN', 'EMPLOYEE'].includes(role)) updates.role = role;
+  next.users[uidx] = { ...user, ...updates };
+  if (user.employeeId) {
+    const pidx = next.people.findIndex((p) => p.id === user.employeeId);
+    if (pidx >= 0) {
+      const pUpdates = {};
+      if (name) pUpdates.name = name;
+      if (job) pUpdates.job = job;
+      if (role) pUpdates.role = role === 'ADMIN' ? 'manager' : 'dipendente';
+      if (ferie !== undefined) pUpdates.ferie = Number(ferie);
+      if (permessi !== undefined) pUpdates.permessi = Number(permessi);
+      if (bu && bu !== next.people[pidx].bu) {
+        if (!next.bus.some((b) => b.id === bu)) return res.status(400).json({ error: 'BAD_BU', message: 'Business Unit non valida' });
+        pUpdates.bu = bu;
+      }
+      next.people[pidx] = { ...next.people[pidx], ...pUpdates };
+    }
+  }
+  await writeState(next);
+  const updated = next.users.find((u) => u.id === req.params.id);
+  res.json({ user: { ...updated, password: undefined }, state: { ...scopedState(next, publicUser(next, req.user)), allBus: next.bus } });
+});
+
+app.delete('/api/admin/users/:id', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo Super Admin' });
+  const next = clone(req.state);
+  const uidx = next.users.findIndex((u) => u.id === req.params.id);
+  if (uidx < 0) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utente non trovato' });
+  if (next.users[uidx].role === 'SUPER_ADMIN') return res.status(403).json({ error: 'FORBIDDEN', message: 'Non puoi eliminare il Super Admin' });
+  const empId = next.users[uidx].employeeId;
+  next.users.splice(uidx, 1);
+  if (empId) {
+    const pidx = next.people.findIndex((p) => p.id === empId);
+    if (pidx >= 0) next.people.splice(pidx, 1);
+    next.bus = next.bus.map((b) => b.managerId === empId ? { ...b, managerId: null } : b);
+  }
+  await writeState(next);
+  res.json({ ok: true, state: { ...scopedState(next, publicUser(next, req.user)), allBus: next.bus } });
+});
+
+// --- SUPER ADMIN: BU CRUD ---
+app.get('/api/admin/bus', requireUser, (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo Super Admin' });
+  const bus = req.state.bus.map((b) => {
+    const mgr = b.managerId ? req.state.people.find((p) => p.id === b.managerId) : null;
+    return { ...b, managerName: mgr?.name || null };
+  });
+  res.json({ bus });
+});
+
+app.post('/api/admin/bus', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo Super Admin' });
+  const { name, color, managerId } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'BAD_INPUT', message: 'Nome BU obbligatorio' });
+  const next = clone(req.state);
+  const newBu = { id: id('bu'), name, color: color || '#5B6472', managerId: managerId || null };
+  next.bus.push(newBu);
+  await writeState(next);
+  res.status(201).json({ bu: newBu, state: { ...scopedState(next, publicUser(next, req.user)), allBus: next.bus } });
+});
+
+app.patch('/api/admin/bus/:id', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo Super Admin' });
+  const { name, color, managerId } = req.body || {};
+  const next = clone(req.state);
+  const bidx = next.bus.findIndex((b) => b.id === req.params.id);
+  if (bidx < 0) return res.status(404).json({ error: 'NOT_FOUND', message: 'Business Unit non trovata' });
+  const updates = {};
+  if (name) updates.name = name;
+  if (color) updates.color = color;
+  if (managerId !== undefined) updates.managerId = managerId || null;
+  next.bus[bidx] = { ...next.bus[bidx], ...updates };
+  await writeState(next);
+  res.json({ bu: next.bus[bidx], state: { ...scopedState(next, publicUser(next, req.user)), allBus: next.bus } });
+});
+
+app.delete('/api/admin/bus/:id', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo Super Admin' });
+  const next = clone(req.state);
+  const bidx = next.bus.findIndex((b) => b.id === req.params.id);
+  if (bidx < 0) return res.status(404).json({ error: 'NOT_FOUND', message: 'Business Unit non trovata' });
+  next.bus.splice(bidx, 1);
+  await writeState(next);
+  res.json({ ok: true, state: { ...scopedState(next, publicUser(next, req.user)), allBus: next.bus } });
+});
+
+// --- MANAGER: Create employee in own BU ---
+app.post('/api/manager/people', requireUser, async (req, res) => {
+  if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ADMIN_ONLY', message: 'Solo i manager possono creare dipendenti' });
+  const { name, email, password, job, ferie, permessi } = req.body || {};
+  if (!name || !email || !password) return res.status(400).json({ error: 'BAD_INPUT', message: 'Nome, email e password sono obbligatori' });
+  if (req.state.users.some((u) => u.email === email)) return res.status(409).json({ error: 'DUPLICATE_EMAIL', message: 'Email già registrata' });
+  const scope = userScope(req.state, req.user);
+  if (scope.teamIds.length === 0) return res.status(403).json({ error: 'FORBIDDEN', message: 'Nessuna BU assegnata' });
+  const bu = scope.teamIds[0];
+  const next = clone(req.state);
+  const empId = id('e');
+  const userId = id('u');
+  const parts = name.split(' ');
+  const initials = ((parts[0]?.[0] || 'P') + (parts.at(-1)?.[0] || 'P')).toUpperCase();
+  next.people.push({
+    id: empId, name, bu, role: 'dipendente', job: job || 'Dipendente',
+    ferie: Number(ferie || 26), permessi: Number(permessi || 32), ferieTot: 26, permessiTot: 32, initials, av: '#5B6472'
+  });
+  next.users.push({
+    id: userId, email, password, role: 'EMPLOYEE', employeeId: empId, name, job: job || 'Dipendente', initials, av: '#5B6472'
+  });
+  await writeState(next);
+  res.status(201).json({ person: next.people.find((p) => p.id === empId), state: scopedState(next, publicUser(next, req.user)) });
+});
+
+
+
 
 
 app.get('/api/notifications', requireUser, (req, res) => {
@@ -271,6 +428,7 @@ app.post('/api/closures/bulk-assignment', requireUser, async (req, res) => {
   await writeState(next);
   res.json({ state: scopedState(next, publicUser(next, req.user)) });
 });
+
 
 app.use(express.static('dist'));
 app.get(/.*/, (_req, res) => res.sendFile('index.html', { root: 'dist' }));

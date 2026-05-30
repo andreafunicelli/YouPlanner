@@ -51,7 +51,7 @@ export function seedState() {
       { id:'bu3', name:'Infrastruttura & Cloud', managerId:'e10', color:'#0E9D94' },
     ],
     people,
-    holidays: { ...holidaysFor(2025), ...holidaysFor(2026), ...holidaysFor(2027) },
+    holidays: { ...holidaysFor(2025), ...holidaysFor(2026), ...holidaysFor(2027), ...holidaysFor(2028) },
     closures: [
       // Chiusura Capodanno
       { id:'c1',  date:'2026-01-02', label:'Chiusura Capodanno', presidio:[] },

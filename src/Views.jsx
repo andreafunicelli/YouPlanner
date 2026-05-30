@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Icon, Avatar, Pill, Modal, SectionHead } from './components.jsx';
-import { createOnCall, createShift, createPerson, updateClosureAssignment, bulkUpdateClosureAssignments } from './api.js';
+import { createOnCall, createShift, createPerson, updateClosureAssignment, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, createManagerEmployee } from './api.js';
 import { dayConflict } from './Calendar.jsx';
 import {
-  PEOPLE, BUS, SHIFTS, ONCALL, CLOSURES, HOLIDAYS,
+  PEOPLE, BUS, SHIFTS, ONCALL, CLOSURES, HOLIDAYS, holidaysFor,
   person as getPerson, bu as getBU, peopleOf,
   TODAY, DOW, MONTHS, fmtRange, parse, addDays, iso, mondayOf,
 } from './data.js';
@@ -16,7 +16,7 @@ export const shiftStatusBadge = (s) => ({
 }[s]);
 
 /* ---------- DASHBOARD ---------- */
-export function Dashboard({ people, getEntries, th, notifs, reqs, shifts, onGoto, scope }) {
+export function Dashboard({ role, meId, people, getEntries, th, notifs, reqs, shifts, oncall, onGoto, scope }) {
   const today = iso(TODAY);
   const c = dayConflict(people, today, getEntries, th);
   const inService = people.length - c.absent;
@@ -32,6 +32,133 @@ export function Dashboard({ people, getEntries, th, notifs, reqs, shifts, onGoto
       <div className="kpi"><div className="kpi-val" style={{ color }}>{val}</div><div className="kpi-lbl">{lbl}</div></div>
     </button>
   );
+
+  if (role === 'dipendente' && meId) {
+    const me = people.find((p) => p.id === meId);
+    const myToday = getEntries(meId, today);
+    const myReqs = reqs.filter((r) => r.empId === meId);
+    const pendingMine = myReqs.filter((r) => r.status === 'pending').length;
+    const oncallToday = (oncall || []).filter((o) => o.from <= today && o.to >= today);
+    const oncallNow = oncallToday.find((o) => o.empId === meId);
+    const oncallOthers = oncallToday.filter((o) => o.empId !== meId).slice(0, 3);
+    const todayShifts = shifts.filter((s) => {
+      if (s.status === 'scaduto') return false;
+      if (!s.start || s.start > today) return false;
+      if (s.end && s.end < today) return false;
+      return true;
+    });
+    const myShifts = todayShifts.filter((s) => s.empId === meId);
+    const otherShifts = todayShifts.filter((s) => s.empId !== meId).slice(0, 4);
+    const upcoming = [];
+    Object.entries(reqs.reduce((acc, r) => { if (['pending', 'approved'].includes(r.status)) acc.push(r); return acc; }, [])).forEach(([, r]) => upcoming.push(r));
+    upcoming.sort((a, b) => (a.from > b.from ? 1 : -1));
+    const short = upcoming.filter((r) => r.empId === meId).slice(0, 4);
+
+    return (
+      <div className="fade-in">
+        <SectionHead title="Panoramica" sub={`Ciao ${me?.name?.split(' ')[0] || 'utente'} · ${DOW[(TODAY.getDay()+6)%7]} ${TODAY.getDate()} ${MONTHS[TODAY.getMonth()]}`} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 16 }}>
+          {kpi(pendingMine, 'Richieste in attesa', '#E03127', <Icon name="inbox" size={19} />, 'richieste')}
+          {kpi(myToday.some((e) => ['ferie', 'malattia', 'festa', 'chiusura'].includes(e.type)) ? 'Sì' : 'No', 'Assente oggi', '#E08A1E', <Icon name="calendar" size={19} />, 'calendario')}
+          {kpi(oncallNow ? 'Attiva' : 'No', 'Reperibilità oggi', '#0E9D94', <Icon name="phone" size={19} />, 'calendario')}
+          {kpi(myShifts.length, 'Turni attivi oggi', '#7C5CF0', <Icon name="clock" size={19} />, 'calendario')}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, alignItems: 'start' }}>
+          <div className="card">
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icon name="calendar" size={17} color="var(--red)" />Il mio stato oggi
+            </div>
+            <div className="card-pad" style={{ display: 'grid', gap: 10 }}>
+              {myToday.length === 0 && <div className="empty" style={{ padding: 0 }}>Nessuna assegnazione oggi.</div>}
+              {myToday.map((e, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Pill type={e.type} time={e.time} note={e.note} />
+                  {e.label && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{e.label}</span>}
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <button className="btn btn-sm" onClick={() => onGoto('richieste')}>Nuova richiesta</button>
+                <button className="btn btn-sm btn-ghost" onClick={() => onGoto('calendario')}>Apri calendario</button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="card">
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="phone" size={17} color="var(--c-reper)" />Reperibilità oggi
+              </div>
+              {!oncallToday.length && <div className="empty">Nessuna reperibilità attiva oggi.</div>}
+              {oncallToday.length > 0 && (
+                <div className="card-pad" style={{ display: 'grid', gap: 10 }}>
+                  {oncallToday.map((o) => {
+                    const p = people.find((x) => x.id === o.empId) || getPerson(o.empId);
+                    const isMe = o.empId === meId;
+                    return (
+                      <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderRadius: 8, border: `1px solid ${isMe ? 'var(--c-reper)' : 'var(--line)'}`, background: isMe ? 'var(--c-reper-bg)' : 'var(--surface)' }}>
+                        <Avatar p={p} size={28} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}{isMe ? ' · Tu' : ''}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{o.time}{o.note ? ` · ${o.note}` : ''}</div>
+                        </div>
+                        <span className={`badge ${isMe ? 'badge-green' : 'badge-gray'}`}>{isMe ? 'Attiva' : 'Team'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="clock" size={17} color="var(--c-turno)" />Turni oggi
+              </div>
+              {!todayShifts.length && <div className="empty">Nessun turno attivo oggi.</div>}
+              {todayShifts.length > 0 && (
+                <div className="card-pad" style={{ display: 'grid', gap: 8 }}>
+                  {myShifts.concat(otherShifts).slice(0, 5).map((s) => {
+                    const p = s.empId ? (people.find((x) => x.id === s.empId) || getPerson(s.empId)) : null;
+                    const isMe = s.empId === meId;
+                    return (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Avatar p={p} size={26} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>{s.title}{isMe ? ' · Tu' : ''}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.day} · {s.time}</div>
+                        </div>
+                        {shiftStatusBadge(s.status)}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon name="inbox" size={17} color="var(--red)" />Le mie prossime scadenze
+          </div>
+          {short.length === 0 && <div className="empty">Nessuna richiesta recente.</div>}
+          {short.length > 0 && (
+            <div style={{ padding: '12px 18px', display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
+              {short.map((r) => (
+                <button key={r.id} className="card card-pad" onClick={() => onGoto('richieste')} style={{ textAlign: 'left', display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <Pill type={r.type} />
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{fmtRange(r.from, r.to)}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{r.status === 'pending' ? 'In attesa' : r.status === 'approved' ? 'Approvata' : 'Rifiutata'}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fade-in">
@@ -342,11 +469,24 @@ export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap
   const [expandedGi, setExpandedGi] = useState(null);
   const [gridEdits, setGridEdits] = useState({});
   const [saving, setSaving] = useState(false);
-  const holidays = Object.entries(holidaysMap || {}).filter(([d]) => parse(d) >= new Date(2026,4,1)).sort();
+
+  // Year selector — derive available years from closures + current
+  const allClosureYears = [...new Set((closures || []).map(c => Number(c.date.slice(0, 4))))].sort();
+  const currentYear = new Date().getFullYear();
+  const minYear = allClosureYears.length ? Math.min(allClosureYears[0], currentYear) : currentYear;
+  const maxYear = allClosureYears.length ? Math.max(allClosureYears[allClosureYears.length - 1], currentYear + 1) : currentYear + 1;
+  const [selectedYear, setSelectedYear] = useState(Math.max(2026, currentYear));
+
+  // Filter closures for selected year
+  const yearPrefix = String(selectedYear);
+  const sorted = [...(closures || [])].filter(c => c.date.startsWith(yearPrefix)).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Compute national holidays for selected year
+  const yearHolidays = holidaysFor(selectedYear);
+  const holidays = Object.entries(yearHolidays).sort();
 
   // Group closures by label
   const grouped = [];
-  const sorted = [...(closures || [])].sort((a, b) => a.date.localeCompare(b.date));
   let cur = null;
   for (const c of sorted) {
     if (cur && cur.label === c.label) {
@@ -421,6 +561,11 @@ export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap
   return (
     <div className="fade-in">
       <SectionHead title="Chiusure aziendali e festività" sub={scope} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, margin: '8px 0 16px' }}>
+        <button className="btn btn-sm" disabled={selectedYear <= minYear} onClick={() => { setSelectedYear(y => y - 1); setExpandedGi(null); setGridEdits({}); }}>←</button>
+        <span style={{ fontWeight: 800, fontSize: 17, minWidth: 60, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{selectedYear}</span>
+        <button className="btn btn-sm" disabled={selectedYear >= maxYear} onClick={() => { setSelectedYear(y => y + 1); setExpandedGi(null); setGridEdits({}); }}>→</button>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
         <div className="card">
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5 }}>Chiusure aziendali</div>
@@ -524,127 +669,358 @@ export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap
   );
 }
 
+
 /* ---------- ADMIN (Persone) ---------- */
 export function AdminView({ onRefresh, people, bus }) {
-  const [open, setOpen] = useState(false);
-  const peopleList = people && people.length ? people : PEOPLE;
-  const busList = bus && bus.length ? bus : BUS;
+  const [tab, setTab] = useState('people');
+  const [buFilter, setBuFilter] = useState('');
+  const [users, setUsers] = useState([]);
+  const [busData, setBusData] = useState(bus || []);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editUser, setEditUser] = useState(null);
+  const [editBu, setEditBu] = useState(null);
+  const [createBuOpen, setCreateBuOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleteBuConfirm, setDeleteBuConfirm] = useState(null);
+
+  const loadData = async () => {
+    setLoading(true); setError(null);
+    try {
+      const [usersRes, busRes] = await Promise.all([getAdminUsers(), getAdminBus()]);
+      setUsers(usersRes.users || []);
+      setBusData(busRes.bus || []);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  };
+
+  useState(() => { loadData(); }, []);
+
+  const filteredUsers = buFilter ? users.filter((u) => u.bu === buFilter) : users;
+  const superAdmin = users.find((u) => u.role === 'SUPER_ADMIN');
+  const managers = filteredUsers.filter((u) => u.role === 'ADMIN');
+  const employees = filteredUsers.filter((u) => u.role === 'EMPLOYEE');
+
+  const handleCreateUser = async (data) => {
+    try {
+      await createAdminUser(data);
+      setCreateOpen(false);
+      await loadData();
+      onRefresh?.();
+    } catch (err) { throw err; }
+  };
+
+  const handleEditUser = async (id, data) => {
+    try {
+      await updateAdminUser(id, data);
+      setEditUser(null);
+      await loadData();
+      onRefresh?.();
+    } catch (err) { throw err; }
+  };
+
+  const handleDeleteUser = async (id) => {
+    try {
+      await deleteAdminUser(id);
+      setDeleteConfirm(null);
+      await loadData();
+      onRefresh?.();
+    } catch (err) { throw err; }
+  };
+
+  const handleCreateBu = async (data) => {
+    try {
+      await createAdminBu(data);
+      setCreateBuOpen(false);
+      await loadData();
+      onRefresh?.();
+    } catch (err) { throw err; }
+  };
+
+  const handleEditBu = async (id, data) => {
+    try {
+      await updateAdminBu(id, data);
+      setEditBu(null);
+      await loadData();
+      onRefresh?.();
+    } catch (err) { throw err; }
+  };
+
+  const handleDeleteBu = async (id) => {
+    try {
+      await deleteAdminBu(id);
+      setDeleteBuConfirm(null);
+      await loadData();
+      onRefresh?.();
+    } catch (err) { throw err; }
+  };
+
+  const buById = (id) => busData.find((b) => b.id === id);
+
+  if (loading) return <div className="fade-in"><SectionHead title="Gestione" sub="Super Admin" /><div className="card empty"><Icon name="clock" size={24} /><div style={{ marginTop: 8, fontWeight: 600 }}>Caricamento…</div></div></div>;
+  if (error) return <div className="fade-in"><SectionHead title="Gestione" sub="Super Admin" /><div className="alert-banner alert-red" style={{ margin: 14 }}><Icon name="alert" size={16} /><div>{error}</div></div></div>;
+
   return (
     <div className="fade-in">
-      <SectionHead title="Persone" sub="Super Admin · Gestione persone e Business Unit" />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 16 }}>
-        {busList.map((b) => {
-          const ppl = peopleList.filter((p) => p.bu === b.id);
-          const mgr = getPerson(b.managerId);
-          return (
-            <div key={b.id} className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ width: 12, height: 12, borderRadius: 4, background: b.color }}></span>
-                <div style={{ fontWeight: 800, fontSize: 15 }}>{b.name}</div>
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Manager: <strong style={{ color: 'var(--text)' }}>{mgr.name}</strong></div>
-              <div style={{ display: 'flex', marginTop: 2 }}>
-                {ppl.slice(0,6).map((p, i) => <span key={p.id} style={{ marginLeft: i ? -8 : 0, border: '2px solid var(--surface)', borderRadius: '50%' }}><Avatar p={p} size={30} /></span>)}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>{ppl.length} collaboratori</div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="card">
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 14.5, display: 'flex', alignItems: 'center' }}>
-          Persone<span className="spacer"></span>
-          <button className="btn btn-sm" onClick={() => setOpen(true)}><Icon name="plus" size={14} sw={2.4} />Aggiungi persona</button>
+      <SectionHead title="Gestione" sub="Super Admin · Persone e Business Unit"
+        right={<div className="seg">
+          <button className={tab === 'people' ? 'on' : ''} onClick={() => setTab('people')}>Persone</button>
+          <button className={tab === 'bus' ? 'on' : ''} onClick={() => setTab('bus')}>Business Unit</button>
+        </div>} />
+
+      {tab === 'people' && <>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select className="input" style={{ width: 200 }} value={buFilter} onChange={(e) => setBuFilter(e.target.value)}>
+            <option value="">Tutte le BU</option>
+            {busData.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <span className="spacer" />
+          <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{filteredUsers.length} utenti</span>
+          <button className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)}><Icon name="plus" size={14} sw={2.4} />Crea utente</button>
         </div>
-        <table className="tbl">
-          <thead><tr><th>Nome</th><th>Ruolo</th><th>Business Unit</th><th>Ferie</th><th>Permessi</th></tr></thead>
-          <tbody>
-            {peopleList.map((p) => (
-              <tr key={p.id}>
-                <td><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Avatar p={p} size={32} />
-                  <div><div style={{ fontWeight: 700 }}>{p.name}</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{p.job}</div></div>
-                </div></td>
-                <td>{p.role === 'manager' ? <span className="badge badge-red">Manager</span> : <span className="badge badge-gray">Dipendente</span>}</td>
-                <td>{getBU(p.bu).name}</td>
-                <td className="mono">{p.ferie}/{p.ferieTot} gg</td>
-                <td className="mono">{p.permessi}/{p.permessiTot} h</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {open && <PersonModal bus={busList} onClose={() => setOpen(false)} onRefresh={onRefresh} />}
+
+        {superAdmin && (
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 13.5 }}>Super Admin</div>
+            <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Avatar p={superAdmin} size={36} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700 }}>{superAdmin.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{superAdmin.email}</div>
+              </div>
+              <span className="badge badge-red">Super Admin</span>
+            </div>
+          </div>
+        )}
+
+        {managers.length > 0 && (
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 13.5 }}>Manager ({managers.length})</div>
+            <table className="tbl">
+              <thead><tr><th>Nome</th><th>Email</th><th>Business Unit</th><th></th></tr></thead>
+              <tbody>{managers.map((u) => (
+                <tr key={u.id}>
+                  <td><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Avatar p={u} size={30} /><div><div style={{ fontWeight: 700 }}>{u.name}</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{u.job}</div></div></div></td>
+                  <td className="mono" style={{ fontSize: 12.5 }}>{u.email}</td>
+                  <td>{u.bu ? <span className="badge badge-gray">{buById(u.bu)?.name || u.bu}</span> : <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>Nessuna BU</span>}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="iconbtn" title="Modifica" onClick={() => setEditUser(u)}><Icon name="sliders" size={15} /></button>
+                    <button className="iconbtn" title="Elimina" onClick={() => setDeleteConfirm(u)}><Icon name="x" size={15} /></button>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="card">
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', fontWeight: 800, fontSize: 13.5 }}>Dipendenti ({employees.length})</div>
+          {employees.length === 0 ? <div className="empty">Nessun dipendente{buFilter ? ' in questa BU' : ''}.</div> : (
+            <table className="tbl">
+              <thead><tr><th>Nome</th><th>Email</th><th>Business Unit</th><th>Ferie</th><th>Permessi</th><th></th></tr></thead>
+              <tbody>{employees.map((u) => (
+                <tr key={u.id}>
+                  <td><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Avatar p={u} size={30} /><div><div style={{ fontWeight: 700 }}>{u.name}</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{u.job}</div></div></div></td>
+                  <td className="mono" style={{ fontSize: 12.5 }}>{u.email}</td>
+                  <td>{u.bu ? <span className="badge badge-gray">{buById(u.bu)?.name || u.bu}</span> : <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>—</span>}</td>
+                  <td className="mono" style={{ fontSize: 12 }}>{u.ferie ?? '—'}/{u.ferieTot ?? 26} gg</td>
+                  <td className="mono" style={{ fontSize: 12 }}>{u.permessi ?? '—'}/{u.permessiTot ?? 32} h</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="iconbtn" title="Modifica" onClick={() => setEditUser(u)}><Icon name="sliders" size={15} /></button>
+                    <button className="iconbtn" title="Elimina" onClick={() => setDeleteConfirm(u)}><Icon name="x" size={15} /></button>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+        </div>
+      </>}
+
+      {tab === 'bus' && <>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+          <button className="btn btn-primary btn-sm" onClick={() => setCreateBuOpen(true)}><Icon name="plus" size={14} sw={2.4} />Crea Business Unit</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+          {busData.map((b) => {
+            const mgr = b.managerId ? people.find((p) => p.id === b.managerId) || users.find((u) => u.employeeId === b.managerId) : null;
+            const ppl = people.filter((p) => p.bu === b.id);
+            return (
+              <div key={b.id} className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 4, background: b.color }}></span>
+                  <div style={{ fontWeight: 800, fontSize: 15, flex: 1 }}>{b.name}</div>
+                  <button className="iconbtn" title="Modifica" onClick={() => setEditBu(b)}><Icon name="sliders" size={15} /></button>
+                  <button className="iconbtn" title="Elimina" onClick={() => setDeleteBuConfirm(b)}><Icon name="x" size={15} /></button>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Manager: <strong style={{ color: 'var(--text)' }}>{mgr?.name || 'Non assegnato'}</strong></div>
+                <div style={{ display: 'flex', marginTop: 2 }}>
+                  {ppl.slice(0, 6).map((p, i) => <span key={p.id} style={{ marginLeft: i ? -8 : 0, border: '2px solid var(--surface)', borderRadius: '50%' }}><Avatar p={p} size={28} /></span>)}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>{ppl.length} collaboratori</div>
+              </div>
+            );
+          })}
+        </div>
+      </>}
+
+      {createOpen && <UserCreateModal bus={busData} onClose={() => setCreateOpen(false)} onSubmit={handleCreateUser} />}
+      {editUser && <UserEditModal user={editUser} bus={busData} onClose={() => setEditUser(null)} onSubmit={handleEditUser} />}
+      {createBuOpen && <BuCreateModal managers={users.filter((u) => u.role === 'ADMIN')} onClose={() => setCreateBuOpen(false)} onSubmit={handleCreateBu} />}
+      {editBu && <BuEditModal bu={editBu} managers={users.filter((u) => u.role === 'ADMIN')} onClose={() => setEditBu(null)} onSubmit={handleEditBu} />}
+      {deleteConfirm && <Modal title="Elimina utente" icon={<Icon name="alert" size={19} color="var(--red)" />} onClose={() => setDeleteConfirm(null)}
+        footer={<><button className="btn" onClick={() => setDeleteConfirm(null)}>Annulla</button><button className="btn btn-danger" onClick={() => handleDeleteUser(deleteConfirm.id)}>Elimina</button></>}>
+        <p style={{ fontSize: 13.5 }}>Eliminare <strong>{deleteConfirm.name}</strong> ({deleteConfirm.email})?</p>
+        {deleteConfirm.role === 'ADMIN' && <div className="alert-banner alert-amber" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>Se il manager ha una BU assegnata, verrà rimossa come responsabile.</div></div>}
+      </Modal>}
+      {deleteBuConfirm && <Modal title="Elimina Business Unit" icon={<Icon name="alert" size={19} color="var(--red)" />} onClose={() => setDeleteBuConfirm(null)}
+        footer={<><button className="btn" onClick={() => setDeleteBuConfirm(null)}>Annulla</button><button className="btn btn-danger" onClick={() => handleDeleteBu(deleteBuConfirm.id)}>Elimina</button></>}>
+        <p style={{ fontSize: 13.5 }}>Eliminare <strong>{deleteBuConfirm.name}</strong>?</p>
+        <div className="alert-banner alert-amber" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>I dipendenti assegnati perderanno la BU ma non verranno eliminati.</div></div>
+      </Modal>}
     </div>
   );
 }
 
-/* ---------- INTEGRAZIONI (placeholder) ---------- */
-export function IntegrationsView() {
-  return (
-    <div className="fade-in">
-      <SectionHead title="Integrazioni" sub="Super Admin · Configurazione servizi esterni" />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--c-sw-bg)', color: 'var(--c-sw-tx)', display: 'grid', placeItems: 'center' }}>
-              <Icon name="building" size={22} />
-            </span>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 15 }}>Google Workspace</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Sincronizzazione calendario e directory</div>
-            </div>
-          </div>
-          <div className="alert-banner alert-amber" style={{ fontSize: 12.5, padding: '9px 12px' }}>
-            <Icon name="alert" size={15} />
-            <div>Configurazione non attiva. L'integrazione con Google Workspace sarà disponibile in una prossima versione.</div>
-          </div>
-          <div style={{ display: 'grid', gap: 10 }}>
-            <div className="field"><label>Client ID</label><input className="input" disabled placeholder="Non configurato" /></div>
-            <div className="field"><label>Client Secret</label><input className="input" disabled placeholder="Non configurato" /></div>
-            <div className="field"><label>Domain</label><input className="input" disabled placeholder="es. azienda.it" /></div>
-          </div>
-          <button className="btn" disabled>Configura Google Workspace</button>
-        </div>
-        <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--c-permesso-bg)', color: 'var(--c-permesso-tx)', display: 'grid', placeItems: 'center' }}>
-              <Icon name="lock" size={22} />
-            </span>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 15 }}>LDAP / Active Directory</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Autenticazione centralizzata utenti</div>
-            </div>
-          </div>
-          <div className="alert-banner alert-amber" style={{ fontSize: 12.5, padding: '9px 12px' }}>
-            <Icon name="alert" size={15} />
-            <div>Configurazione non attiva. L'integrazione LDAP sarà disponibile in una prossima versione.</div>
-          </div>
-          <div style={{ display: 'grid', gap: 10 }}>
-            <div className="field"><label>Server URL</label><input className="input" disabled placeholder="ldap://server.azienda.it" /></div>
-            <div className="field"><label>Base DN</label><input className="input" disabled placeholder="dc=azienda,dc=it" /></div>
-            <div className="field"><label>Bind DN</label><input className="input" disabled placeholder="cn=admin,dc=azienda,dc=it" /></div>
-          </div>
-          <button className="btn" disabled>Configura LDAP</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PersonModal({ bus, onClose, onRefresh }) {
-  const [name, setName] = useState('Nuova Persona');
-  const [buId, setBuId] = useState(bus[0]?.id || '');
-  const [job, setJob] = useState('Dipendente');
+function UserCreateModal({ bus, onClose, onSubmit }) {
+  const [form, setForm] = useState({ role: 'EMPLOYEE', name: '', email: '', password: '', bu: bus[0]?.id || '', job: '' });
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const submit = async () => {
+    setSaving(true); setError('');
+    try { await onSubmit(form); } catch (err) { setError(err.message); setSaving(false); }
+  };
   return (
-    <Modal title="Aggiungi persona" icon={<Icon name="users" size={19} color="var(--red)" />} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Annulla</button><button className="btn btn-primary" disabled={!name || !buId} onClick={async () => { try { setError(''); await createPerson({ name, bu: buId, job }); await onRefresh?.(); onClose(); } catch (err) { setError(err.message); } }}>Salva</button></>}>
+    <Modal title="Crea utente" icon={<Icon name="plus" size={19} color="var(--red)" />} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Annulla</button><button className="btn btn-primary" disabled={saving || !form.name || !form.email || !form.password} onClick={submit}>{saving ? 'Creazione…' : 'Crea utente'}</button></>}>
       {error && <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>{error}</div></div>}
-      <div className="field"><label>Nome</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
-      <div className="field"><label>Business Unit</label><select className="input" value={buId} onChange={(e) => setBuId(e.target.value)}>{bus.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
-      <div className="field"><label>Mansione</label><input className="input" value={job} onChange={(e) => setJob(e.target.value)} /></div>
+      <div className="seg" style={{ alignSelf: 'flex-start' }}>
+        <button className={form.role === 'EMPLOYEE' ? 'on' : ''} onClick={() => set('role', 'EMPLOYEE')}>Dipendente</button>
+        <button className={form.role === 'ADMIN' ? 'on' : ''} onClick={() => set('role', 'ADMIN')}>Manager</button>
+      </div>
+      <div className="field"><label>Nome completo</label><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="es. Mario Rossi" /></div>
+      <div className="field"><label>Email</label><input className="input" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="mario@azienda.it" /></div>
+      <div className="field"><label>Password</label><input className="input" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="Min 6 caratteri" /></div>
+      <div className="field"><label>Business Unit</label><select className="input" value={form.bu} onChange={(e) => set('bu', e.target.value)}><option value="">Nessuna</option>{bus.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+      <div className="field"><label>Mansione</label><input className="input" value={form.job} onChange={(e) => set('job', e.target.value)} placeholder={form.role === 'ADMIN' ? 'BU Manager' : 'Dipendente'} /></div>
     </Modal>
   );
 }
 
+function UserEditModal({ user, bus, onClose, onSubmit }) {
+  const [form, setForm] = useState({ name: user.name || '', email: user.email || '', job: user.job || '', bu: user.bu || '', password: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const submit = async () => {
+    setSaving(true); setError('');
+    try { await onSubmit(user.id, form); } catch (err) { setError(err.message); setSaving(false); }
+  };
+  return (
+    <Modal title="Modifica utente" icon={<Icon name="sliders" size={19} color="var(--red)" />} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Annulla</button><button className="btn btn-primary" disabled={saving} onClick={submit}>{saving ? 'Salvataggio…' : 'Salva'}</button></>}>
+      {error && <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>{error}</div></div>}
+      <div className="field"><label>Nome</label><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} /></div>
+      <div className="field"><label>Email</label><input className="input" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} /></div>
+      <div className="field"><label>Mansione</label><input className="input" value={form.job} onChange={(e) => set('job', e.target.value)} /></div>
+      <div className="field"><label>Business Unit</label><select className="input" value={form.bu} onChange={(e) => set('bu', e.target.value)}><option value="">Nessuna</option>{bus.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+      <div className="field"><label>Nuova password (lascia vuoto per non cambiare)</label><input className="input" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} /></div>
+    </Modal>
+  );
+}
+
+function BuCreateModal({ managers, onClose, onSubmit }) {
+  const [form, setForm] = useState({ name: '', color: '#E03127', managerId: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const submit = async () => {
+    setSaving(true); setError('');
+    try { await onSubmit(form); } catch (err) { setError(err.message); setSaving(false); }
+  };
+  return (
+    <Modal title="Crea Business Unit" icon={<Icon name="plus" size={19} color="var(--red)" />} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Annulla</button><button className="btn btn-primary" disabled={saving || !form.name} onClick={submit}>{saving ? 'Creazione…' : 'Crea BU'}</button></>}>
+      {error && <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>{error}</div></div>}
+      <div className="field"><label>Nome</label><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="es. Sviluppo Software" /></div>
+      <div className="field"><label>Colore</label><input className="input" type="color" value={form.color} onChange={(e) => set('color', e.target.value)} /></div>
+      <div className="field"><label>Manager responsabile</label><select className="input" value={form.managerId} onChange={(e) => set('managerId', e.target.value)}><option value="">Non assegnato</option>{managers.map((m) => <option key={m.id} value={m.employeeId}>{m.name}</option>)}</select></div>
+    </Modal>
+  );
+}
+
+function BuEditModal({ bu, managers, onClose, onSubmit }) {
+  const [form, setForm] = useState({ name: bu.name, color: bu.color || '#5B6472', managerId: bu.managerId || '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const submit = async () => {
+    setSaving(true); setError('');
+    try { await onSubmit(bu.id, form); } catch (err) { setError(err.message); setSaving(false); }
+  };
+  return (
+    <Modal title="Modifica Business Unit" icon={<Icon name="sliders" size={19} color="var(--red)" />} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Annulla</button><button className="btn btn-primary" disabled={saving} onClick={submit}>{saving ? 'Salvataggio…' : 'Salva'}</button></>}>
+      {error && <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>{error}</div></div>}
+      <div className="field"><label>Nome</label><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} /></div>
+      <div className="field"><label>Colore</label><input className="input" type="color" value={form.color} onChange={(e) => set('color', e.target.value)} /></div>
+      <div className="field"><label>Manager responsabile</label><select className="input" value={form.managerId} onChange={(e) => set('managerId', e.target.value)}><option value="">Non assegnato</option>{managers.map((m) => <option key={m.id} value={m.employeeId}>{m.name}</option>)}</select></div>
+    </Modal>
+  );
+}
+
+/* ---------- INTEGRAZIONI ---------- */
+export function IntegrationsView() {
+  return (
+    <div className="fade-in">
+      <SectionHead title="Integrazioni" sub="Super Admin · Connessioni esterne e servizi" />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ width: 42, height: 42, borderRadius: 10, background: 'var(--c-permesso-bg)', display: 'grid', placeItems: 'center' }}><Icon name="building" size={20} color="var(--c-permesso-tx)" /></span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>LDAP / Active Directory</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Sincronizzazione utenti da directory aziendale</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            Configura la connessione al tuo server LDAP o Active Directory per importare automaticamente utenti, gruppi e attributi organizzativi.
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div className="field"><label>Server URL</label><input className="input" placeholder="ldap://dc.azienda.local:389" disabled /></div>
+            <div className="field"><label>Base DN</label><input className="input" placeholder="DC=azienda,DC=local" disabled /></div>
+            <div className="field"><label>Bind DN</label><input className="input" placeholder="CN=service,CN=Users,DC=azienda,DC=local" disabled /></div>
+            <div className="field"><label>Bind Password</label><input className="input" type="password" placeholder="••••••••" disabled /></div>
+            <div className="field"><label>User Filter</label><input className="input" placeholder="(objectClass=person)" disabled /></div>
+            <div className="field"><label>Group Mapping</label><input className="input" placeholder="CN=Manager → ADMIN, CN=Dipendenti → EMPLOYEE" disabled /></div>
+          </div>
+          <button className="btn" disabled>Configura LDAP (prossimamente)</button>
+          <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L'integrazione LDAP sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
+        </div>
+
+        <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ width: 42, height: 42, borderRadius: 10, background: 'var(--c-sw-bg)', display: 'grid', placeItems: 'center' }}><Icon name="settings" size={20} color="var(--c-sw-tx)" /></span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>Google Workspace</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>SSO e sincronizzazione da Google</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            Integra Google Workspace per Single Sign-On (SSO), importazione utenti da Google Directory e sincronizzazione calendario.
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div className="field"><label>Client ID</label><input className="input" placeholder="xxxx.apps.googleusercontent.com" disabled /></div>
+            <div className="field"><label>Client Secret</label><input className="input" type="password" placeholder="••••••••" disabled /></div>
+            <div className="field"><label>Domain</label><input className="input" placeholder="azienda.it" disabled /></div>
+            <div className="field"><label>Service Account JSON</label><input className="input" placeholder="Upload file..." disabled /></div>
+            <div className="field"><label>Scopes</label><input className="input" placeholder="openid, email, profile, directory.user.readonly" disabled /></div>
+          </div>
+          <button className="btn" disabled>Configura Google Workspace (prossimamente)</button>
+          <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L'integrazione Google Workspace sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}

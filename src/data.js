@@ -46,6 +46,7 @@ function holidaysFor(year) {
   };
 }
 
+export { holidaysFor };
 export const HOLIDAYS = { ...holidaysFor(2026) };
 
 export const CLOSURES = [
