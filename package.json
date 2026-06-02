@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "api": "node server/index.mjs",
+    "start": "node server/index.mjs",
     "dev:all": "concurrently \"npm run api\" \"npm run dev\"",
     "test": "node --test server/tests/*.test.mjs"
   },

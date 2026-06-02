@@ -55,10 +55,11 @@ export function Avatar({ p, size = 34 }) {
 }
 
 export function Pill({ type, time, note, showLabel = true }) {
-  const meta = STATUS[type];
+  const displayType = type === 'chiusura' || type === 'festa' ? 'ferie' : type;
+  const meta = STATUS[displayType];
   if (!meta) return null;
   return (
-    <span className={'pill ' + meta.cls}>
+    <span className={'pill ' + meta.cls} title={STATUS[type]?.label || meta.label}>
       <span className="dot"></span>
       {showLabel && <span>{meta.label}</span>}
       {time && <span className="pt">{time}</span>}

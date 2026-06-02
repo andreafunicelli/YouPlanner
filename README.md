@@ -53,10 +53,22 @@ npm run build
 
 ## Database demo
 
-Il backend usa un file JSON locale generato dal seed:
+Il backend usa un file JSON locale generato dal seed. In esecuzione locale il default è:
 
 ```text
 server/peopleplanner-db.json
+```
+
+In Docker viene usato invece un volume persistente:
+
+```text
+/data/peopleplanner-db.json
+```
+
+È possibile sovrascrivere il percorso con:
+
+```bash
+PEOPLEPLANNER_DB_PATH=/percorso/peopleplanner-db.json npm run api
 ```
 
 Reset seed demo:
@@ -65,6 +77,51 @@ Reset seed demo:
 curl -X POST http://127.0.0.1:4174/api/dev/reset \
   -H 'content-type: application/json' \
   -d '{}'
+```
+
+## Deploy con Docker
+
+Build e avvio su un server con Docker/Compose:
+
+```bash
+git clone https://github.com/andreafunicelli/YouPlanner.git
+cd YouPlanner
+docker compose up -d --build
+```
+
+Verifica:
+
+```bash
+curl -fsS http://127.0.0.1:4174/api/health
+docker compose ps
+docker compose logs -f youplanner
+```
+
+URL applicazione:
+
+```text
+http://<server-ip>:4174
+```
+
+Persistenza dati:
+
+```text
+volume Docker: youplanner-data
+file interno: /data/peopleplanner-db.json
+```
+
+Rollback operativo:
+
+```bash
+docker compose down
+docker compose up -d --build
+```
+
+Backup rapido del volume dati:
+
+```bash
+docker run --rm -v youplanner-data:/data -v "$PWD":/backup alpine \
+  sh -c 'cp /data/peopleplanner-db.json /backup/peopleplanner-db.$(date +%F_%H%M).json'
 ```
 
 ## Credenziali demo

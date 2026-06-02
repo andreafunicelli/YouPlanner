@@ -222,17 +222,17 @@ export function Dashboard({ role, meId, people, getEntries, th, notifs, reqs, sh
 }
 
 function CoverageBar({ people, getEntries, date }) {
-  const counts = { turno:0, sw:0, ferie:0, malattia:0, permesso:0, reperibilita:0, disp:0 };
+  const counts = { turno:0, sw:0, ferie:0, malattia:0, permesso:0, reperibilita:0, festa:0, chiusura:0, presidio:0, disp:0 };
   people.forEach((p) => {
     const e = getEntries(p.id, date);
     if (!e.length) { counts.disp++; return; }
     const t = e[0].type; counts[t] = (counts[t] || 0) + 1;
   });
-  const total = people.length;
-  const active = counts.turno + counts.sw;
+  const total = people.length || 1;
+  const absent = counts.ferie + counts.malattia + counts.permesso + counts.festa + counts.chiusura;
+  const active = counts.turno + counts.sw + counts.presidio;
   const oncall = counts.reperibilita;
-  const absent = counts.ferie + counts.malattia + counts.permesso;
-  const segs = [['turno','var(--c-turno)'],['sw','var(--c-sw)'],['reperibilita','var(--c-reper)'],['disp','var(--line-strong)'],['permesso','var(--c-permesso)'],['ferie','var(--c-ferie)'],['malattia','var(--c-malattia)']];
+  const segs = [['turno','var(--c-turno)'],['sw','var(--c-sw)'],['presidio','var(--c-turno)'],['reperibilita','var(--c-reper)'],['disp','var(--line-strong)'],['permesso','var(--c-permesso)'],['ferie','var(--c-ferie)'],['malattia','var(--c-malattia)'],['festa','var(--c-ferie)'],['chiusura','var(--c-ferie)']];
   return (
     <div>
       <div style={{ display: 'flex', height: 28, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--line)' }}>

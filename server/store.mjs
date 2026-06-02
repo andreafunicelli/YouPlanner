@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { holidaysFor, clone } from './domain.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const DB_PATH = path.join(__dirname, 'peopleplanner-db.json');
+export const DB_PATH = process.env.PEOPLEPLANNER_DB_PATH || path.join(__dirname, 'peopleplanner-db.json');
 
 const av = ['#E03127','#2D7FF0','#0E9D94','#7C5CF0','#E08A1E','#2E9E5B','#C2456B','#5B6472','#0F766E','#B45309','#1559BD','#6D28D9','#9A1B30'];
 const withAvatar = (p, i) => {

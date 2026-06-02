@@ -1,0 +1,24 @@
+services:
+  youplanner:
+    build: .
+    image: youplanner:latest
+    container_name: youplanner
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4174
+      PEOPLEPLANNER_DB_PATH: /data/peopleplanner-db.json
+    ports:
+      - "4174:4174"
+    volumes:
+      - youplanner-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4174/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  youplanner-data:

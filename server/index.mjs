@@ -493,5 +493,6 @@ app.get(/.*/, (_req, res) => res.sendFile('index.html', { root: 'dist' }));
 export { app };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  app.listen(PORT, '127.0.0.1', () => console.log(`PeoplePlanner app listening on http://127.0.0.1:${PORT}`));
+  const HOST = process.env.HOST || '127.0.0.1';
+  app.listen(PORT, HOST, () => console.log(`PeoplePlanner app listening on http://${HOST}:${PORT}`));
 }
