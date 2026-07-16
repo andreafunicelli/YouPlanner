@@ -15,6 +15,13 @@ services:
       HOST: 0.0.0.0
       PORT: 4174
       PEOPLEPLANNER_DB_PATH: /data/peopleplanner-db.json
+      LDAP_ENABLED: ${LDAP_ENABLED:-true}
+      GOOGLE_WORKSPACE_ENABLED: ${GOOGLE_WORKSPACE_ENABLED:-true}
+      DEMO_LDAP_SERVER: ${DEMO_LDAP_SERVER:-ldaps://directory.youco.demo:636}
+      DEMO_LDAP_BASE_DN: ${DEMO_LDAP_BASE_DN:-DC=youco,DC=demo}
+      DEMO_LDAP_PASSWORD: ${DEMO_LDAP_PASSWORD:-Demo!2026}
+      DEMO_GOOGLE_DOMAIN: ${DEMO_GOOGLE_DOMAIN:-youco.demo}
+      AUTH_SESSION_TTL_MS: ${AUTH_SESSION_TTL_MS:-43200000}
     ports:
       - "${YOUPLANNER_BIND_ADDRESS:-127.0.0.1}:${YOUPLANNER_PORT:-4174}:4174"
     volumes:

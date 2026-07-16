@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { bootstrap, login, setToken, getToken, DEMO_CREDENTIALS, decideRequest, createRequest, saveAssignment, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar, createManagerEmployee, updateGlobalTweaks, updateMyTweaks, resetMyTweaks } from './api.js';
+import { bootstrap, getAuthConfig, loginWithLdap, loginWithGoogle, logoutSession, setToken, getToken, decideRequest, createRequest, saveAssignment, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar, createManagerEmployee, updateGlobalTweaks, updateMyTweaks, resetMyTweaks } from './api.js';
 import { Icon, Avatar, Pill, Toast, Modal } from './components.jsx';
 import { TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakSlider, TweakColor } from './TweaksPanel.jsx';
 import { WeekView, DayView, MonthView } from './Calendar.jsx';
@@ -143,23 +143,78 @@ function FaqButton() {
   </>;
 }
 
-function LoginScreen({ error, onLogin }) {
+function LoginScreen({ error, onLogin, config }) {
+  const [method, setMethod] = useState('ldap');
+  const [username, setUsername] = useState('elena.conti');
+  const [password, setPassword] = useState('Demo!2026');
+  const ldap = config?.providers?.ldap;
+  const google = config?.providers?.google;
+  const submitLdap = (event) => {
+    event.preventDefault();
+    onLogin('ldap', { username, password });
+  };
   return (
-    <div className="app" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', background: 'var(--bg)' }}>
-      <div className="card card-pad" style={{ width: 'min(460px, calc(100vw - 32px))', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div className="brand" style={{ padding: 0 }}>
-          <div className="brand-mark">P</div>
-          <div><div className="brand-name">People Planner</div><div className="brand-sub">Accesso role-based</div></div>
-        </div>
-        <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-          Seleziona un profilo di verifica. Le chiamate passano dal backend locale e applicano scope/validazioni reali.
-        </div>
-        {error && <div className="alert-banner alert-red" style={{ padding: '9px 12px' }}><Icon name="alert" size={15} /><div>{error}</div></div>}
-        <button className="btn btn-primary" onClick={() => onLogin('admin')}>Super Admin · superadmin@peopleplanner.local</button>
-        <button className="btn" onClick={() => onLogin('manager')}>Manager BU · manager@peopleplanner.local</button>
-        <button className="btn" onClick={() => onLogin('dipendente')}>Dipendente · employee@peopleplanner.local</button>
-        <button className="btn btn-ghost" onClick={() => onLogin('managerEmpty')}>Manager senza BU · verifica scope zero</button>
-        <div className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Password ambiente locale: demo123</div>
+    <div className="login-page">
+      <div className="login-shell">
+        <section className="login-hero">
+          <div className="brand login-brand">
+            <div className="brand-mark">P</div>
+            <div><div className="brand-name">People Planner</div><div className="brand-sub">Workforce operations</div></div>
+          </div>
+          <div className="login-hero-copy">
+            <span className="login-eyebrow">Portale aziendale</span>
+            <h1>Organizza il lavoro.<br />Proteggi il tuo tempo.</h1>
+            <p>Turni, presenze, smart working e richieste in un unico spazio condiviso.</p>
+          </div>
+          <div className="login-security"><Icon name="check" size={15} /> Accesso protetto tramite identità aziendale</div>
+        </section>
+
+        <section className="login-panel">
+          <div className="login-panel-head">
+            <div className="login-mobile-brand"><span className="brand-mark">P</span><strong>People Planner</strong></div>
+            <span className="login-demo-badge">Ambiente demo</span>
+            <h2>Bentornato</h2>
+            <p>Accedi con il tuo account aziendale.</p>
+          </div>
+
+          <div className="login-tabs" role="tablist" aria-label="Metodo di accesso">
+            <button type="button" className={method === 'ldap' ? 'active' : ''} onClick={() => setMethod('ldap')} disabled={ldap?.enabled === false}>Account aziendale</button>
+            <button type="button" className={method === 'google' ? 'active' : ''} onClick={() => setMethod('google')} disabled={google?.enabled === false}>Google Workspace</button>
+          </div>
+
+          {error && <div className="alert-banner alert-red login-error"><Icon name="alert" size={15} /><div>{error}</div></div>}
+
+          {method === 'ldap' ? (
+            <form className="login-form" onSubmit={submitLdap}>
+              <div className="field"><label htmlFor="ldap-user">Nome utente</label><input id="ldap-user" className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="nome.cognome" required /></div>
+              <div className="field"><label htmlFor="ldap-password">Password</label><input id="ldap-password" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+              <button className="btn btn-primary login-submit" type="submit">Accedi <Icon name="chevR" size={16} /></button>
+              <div className="demo-credentials">
+                <strong>Utenti LDAP fittizi</strong>
+                <span>anna.vitali · elena.conti · giulia.romano</span>
+                <span>Password: <span className="mono">{ldap?.demoPassword || 'Demo!2026'}</span></span>
+              </div>
+            </form>
+          ) : (
+            <div className="login-form">
+              <button type="button" className="google-login-button" onClick={() => onLogin('google', { email: google?.identities?.[1]?.email || 'elena.conti@youco.demo' })}>
+                <span className="google-g">G</span><span>Continua con Google</span>
+              </button>
+              <div className="login-divider"><span>oppure scegli un account demo</span></div>
+              <div className="google-accounts">
+                {(google?.identities || []).map((identity) => (
+                  <button type="button" key={identity.email} onClick={() => onLogin('google', { email: identity.email })}>
+                    <Avatar p={{ name: identity.name, av: identity.role === 'Super Admin' ? '#17120F' : identity.role === 'BU Manager' ? '#E03127' : '#7C5CF0' }} size={34} />
+                    <span><strong>{identity.name}</strong><small>{identity.email} · {identity.role}</small></span>
+                    <Icon name="chevR" size={16} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="login-footer">Questa pagina simula LDAP e Google Workspace. Nessun dato viene inviato a servizi esterni.</div>
+        </section>
       </div>
     </div>
   );
@@ -346,6 +401,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [createEmpOpen, setCreateEmpOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [authConfig, setAuthConfig] = useState(null);
   const t = { ...globalTweaks, ...personalTweaks };
 
   const applyBootstrap = (data) => {
@@ -369,24 +425,27 @@ export default function App() {
   };
 
   useEffect(() => {
+    getAuthConfig().then(setAuthConfig).catch(() => setAuthConfig(null));
     if (!getToken()) { setLoading(false); return; }
     bootstrap().then(applyBootstrap).catch((err) => { setError(err.message); setToken(''); }).finally(() => setLoading(false));
   }, []);
 
-  const handleLogin = async (kind) => {
+  const handleLogin = async (provider, credentials) => {
     setLoading(true); setError(null);
     try {
-      const cred = DEMO_CREDENTIALS[kind];
-      await login(cred.email, cred.password);
+      if (provider === 'ldap') await loginWithLdap(credentials.username, credentials.password);
+      else if (provider === 'google') await loginWithGoogle(credentials.email);
+      else throw new Error('Provider di autenticazione non supportato');
       const data = await bootstrap();
       applyBootstrap(data);
-      setPage(kind === 'dipendente' ? 'dashboard' : 'dashboard');
+      setPage('dashboard');
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
 
   const logout = () => {
-    setToken(''); setApiUser(null); setPage('dashboard');
+    logoutSession().catch(() => setToken(''));
+    setApiUser(null); setPage('dashboard');
     setGlobalTweaks({ ...TWEAK_DEFAULTS }); setPersonalTweaks({});
     setGlobalTweaksOpen(false); setPersonalTweaksOpen(false);
   };
@@ -432,7 +491,7 @@ export default function App() {
   }, [t.direzione, t.densita, t.accento, t.colFerie, t.colSw]);
 
   if (loading) return <div className="app"><main className="content"><div className="card empty">Caricamento PeoplePlanner…</div></main></div>;
-  if (!apiUser) return <LoginScreen error={error} onLogin={handleLogin} />;
+  if (!apiUser) return <LoginScreen error={error} onLogin={handleLogin} config={authConfig} />;
 
   const getEntries = makeGetEntries(assign, holidaysData, closuresData);
   const th = { absent: t.sogliaAssenti, remote: t.sogliaRemote };

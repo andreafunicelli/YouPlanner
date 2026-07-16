@@ -15,7 +15,10 @@ WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=4174 \
-    PEOPLEPLANNER_DB_PATH=/data/peopleplanner-db.json
+    PEOPLEPLANNER_DB_PATH=/data/peopleplanner-db.json \
+    LDAP_ENABLED=true \
+    GOOGLE_WORKSPACE_ENABLED=true \
+    DEMO_GOOGLE_DOMAIN=youco.demo
 
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force

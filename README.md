@@ -79,6 +79,31 @@ curl -X POST http://127.0.0.1:4174/api/dev/reset \
   -d '{}'
 ```
 
+## Login LDAP e Google Workspace demo
+
+La pagina di accesso simula due provider aziendali completi senza contattare servizi esterni:
+
+- LDAP / Active Directory con username e password;
+- Google Workspace con account chooser e controllo del dominio fittizio;
+- sessioni opache casuali con scadenza e revoca al logout;
+- mapping delle identità demo sui ruoli Super Admin, BU Manager e Dipendente.
+
+Account LDAP disponibili:
+
+```text
+anna.vitali       Super Admin
+elena.conti       BU Manager
+giulia.romano     Dipendente
+manager.senzabu   Manager senza BU
+password          Demo!2026
+```
+
+Gli account Google sono mostrati direttamente nell'account chooser e appartengono al dominio
+fittizio `youco.demo`. Le variabili `LDAP_ENABLED`, `GOOGLE_WORKSPACE_ENABLED`,
+`DEMO_LDAP_*`, `DEMO_GOOGLE_DOMAIN` e `AUTH_SESSION_TTL_MS` consentono di personalizzare
+la simulazione. Questa implementazione non deve essere considerata un collegamento LDAP/OAuth
+reale: per la produzione servono certificati, segreti e callback dei provider effettivi.
+
 ## Deploy con Docker
 
 Il file `docker-compose.yml` include build multi-stage, healthcheck, riavvio automatico,

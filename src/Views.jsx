@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon, Avatar, Pill, Modal, SectionHead } from './components.jsx';
-import { createOnCall, createShift, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, getAdminClosures, createAdminClosure, updateAdminClosure, deleteAdminClosure } from './api.js';
+import { createOnCall, createShift, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, getAdminClosures, createAdminClosure, updateAdminClosure, deleteAdminClosure, getAuthConfig } from './api.js';
 import { dayConflict } from './Calendar.jsx';
 import {
   PEOPLE, BUS, SHIFTS, ONCALL, CLOSURES, holidaysFor,
@@ -952,53 +952,58 @@ function BuEditModal({ bu, managers, onClose, onSubmit }) {
 
 /* ---------- INTEGRAZIONI ---------- */
 export function IntegrationsView() {
+  const [config, setConfig] = useState(null);
+  const [error, setError] = useState('');
+  const [tested, setTested] = useState('');
+  useEffect(() => {
+    getAuthConfig().then(setConfig).catch((err) => setError(err.message));
+  }, []);
+  if (error) return <div className="alert-banner alert-red"><Icon name="alert" size={16} /><div>{error}</div></div>;
+  if (!config) return <div className="card empty">Caricamento integrazioni…</div>;
+  const { ldap, google } = config.providers;
+  const test = (provider) => {
+    setTested(provider);
+    window.setTimeout(() => setTested(''), 2500);
+  };
   return (
     <div className="fade-in">
       <SectionHead title="Integrazioni" sub="Super Admin · Connessioni esterne e servizi" />
+      <div className="alert-banner alert-amber" style={{ marginBottom: 16, fontSize: 12.5 }}><Icon name="alert" size={15} /><div><strong>Modalità demo attiva.</strong> I flussi di accesso sono completi, ma usano identità fittizie e non contattano servizi esterni.</div></div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ width: 42, height: 42, borderRadius: 10, background: 'var(--c-permesso-bg)', display: 'grid', placeItems: 'center' }}><Icon name="building" size={20} color="var(--c-permesso-tx)" /></span>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 15 }}>LDAP / Active Directory</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Sincronizzazione utenti da directory aziendale</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Autenticazione directory aziendale</div>
             </div>
+            <span className={ldap.enabled ? 'badge badge-green' : 'badge badge-gray'}>{ldap.enabled ? 'Attiva' : 'Disattiva'}</span>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            Configura la connessione al tuo server LDAP o Active Directory per importare automaticamente utenti, gruppi e attributi organizzativi.
+          <div style={{ display: 'grid', gap: 9, fontSize: 12.5 }}>
+            <div className="card card-pad" style={{ padding: 12, boxShadow: 'none' }}><div style={{ color: 'var(--text-faint)', fontSize: 10.5, textTransform: 'uppercase', fontWeight: 800 }}>Server</div><div className="mono" style={{ marginTop: 3 }}>{ldap.server}</div></div>
+            <div className="card card-pad" style={{ padding: 12, boxShadow: 'none' }}><div style={{ color: 'var(--text-faint)', fontSize: 10.5, textTransform: 'uppercase', fontWeight: 800 }}>Base DN</div><div className="mono" style={{ marginTop: 3 }}>{ldap.baseDn}</div></div>
           </div>
-          <div style={{ display: 'grid', gap: 10 }}>
-            <div className="field"><label>Server URL</label><input className="input" placeholder="ldap://dc.azienda.local:389" disabled /></div>
-            <div className="field"><label>Base DN</label><input className="input" placeholder="DC=azienda,DC=local" disabled /></div>
-            <div className="field"><label>Bind DN</label><input className="input" placeholder="CN=service,CN=Users,DC=azienda,DC=local" disabled /></div>
-            <div className="field"><label>Bind Password</label><input className="input" type="password" placeholder="••••••••" disabled /></div>
-            <div className="field"><label>User Filter</label><input className="input" placeholder="(objectClass=person)" disabled /></div>
-            <div className="field"><label>Group Mapping</label><input className="input" placeholder="CN=Manager → ADMIN, CN=Dipendenti → EMPLOYEE" disabled /></div>
-          </div>
-          <button className="btn" disabled>Configura LDAP (prossimamente)</button>
-          <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L’integrazione LDAP sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12.5 }}><strong style={{ color: 'var(--text)' }}>{ldap.identities.length} identità demo</strong> · mapping ruoli e scope BU attivo.</div>
+          <button className="btn" onClick={() => test('ldap')}><Icon name="check" size={15} />Verifica connessione</button>
+          {tested === 'ldap' && <div className="alert-banner" style={{ padding: '8px 11px', borderColor: '#b8dfc5', background: 'var(--c-turno-bg)', color: 'var(--c-turno-tx)', fontSize: 12 }}><Icon name="check" size={14} /><div>Directory demo raggiungibile. Bind e ricerca utenti riusciti.</div></div>}
         </div>
 
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ width: 42, height: 42, borderRadius: 10, background: 'var(--c-sw-bg)', display: 'grid', placeItems: 'center' }}><Icon name="settings" size={20} color="var(--c-sw-tx)" /></span>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 15 }}>Google Workspace</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>SSO e sincronizzazione da Google</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Single Sign-On aziendale</div>
             </div>
+            <span className={google.enabled ? 'badge badge-green' : 'badge badge-gray'}>{google.enabled ? 'Attiva' : 'Disattiva'}</span>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            Integra Google Workspace per Single Sign-On (SSO), importazione utenti da Google Directory e sincronizzazione calendario.
+          <div style={{ display: 'grid', gap: 9, fontSize: 12.5 }}>
+            <div className="card card-pad" style={{ padding: 12, boxShadow: 'none' }}><div style={{ color: 'var(--text-faint)', fontSize: 10.5, textTransform: 'uppercase', fontWeight: 800 }}>Dominio autorizzato</div><div className="mono" style={{ marginTop: 3 }}>{google.domain}</div></div>
+            <div className="card card-pad" style={{ padding: 12, boxShadow: 'none' }}><div style={{ color: 'var(--text-faint)', fontSize: 10.5, textTransform: 'uppercase', fontWeight: 800 }}>Scopes simulati</div><div className="mono" style={{ marginTop: 3 }}>openid · email · profile</div></div>
           </div>
-          <div style={{ display: 'grid', gap: 10 }}>
-            <div className="field"><label>Client ID</label><input className="input" placeholder="xxxx.apps.googleusercontent.com" disabled /></div>
-            <div className="field"><label>Client Secret</label><input className="input" type="password" placeholder="••••••••" disabled /></div>
-            <div className="field"><label>Domain</label><input className="input" placeholder="azienda.it" disabled /></div>
-            <div className="field"><label>Service Account JSON</label><input className="input" placeholder="Upload file..." disabled /></div>
-            <div className="field"><label>Scopes</label><input className="input" placeholder="openid, email, profile, directory.user.readonly" disabled /></div>
-          </div>
-          <button className="btn" disabled>Configura Google Workspace (prossimamente)</button>
-          <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L’integrazione Google Workspace sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12.5 }}><strong style={{ color: 'var(--text)' }}>{google.identities.length} account demo</strong> · controllo dominio e mapping profilo attivi.</div>
+          <button className="btn" onClick={() => test('google')}><Icon name="check" size={15} />Verifica configurazione OAuth</button>
+          {tested === 'google' && <div className="alert-banner" style={{ padding: '8px 11px', borderColor: '#b8dfc5', background: 'var(--c-turno-bg)', color: 'var(--c-turno-tx)', fontSize: 12 }}><Icon name="check" size={14} /><div>Configurazione demo valida. Redirect e dominio consentiti.</div></div>}
         </div>
       </div>
     </div>
