@@ -104,6 +104,7 @@ test('global tweaks are Super Admin only and personal tweaks stay user-scoped', 
   await withServer(async (base) => {
     const superToken = await login(base, 'superadmin@peopleplanner.local');
     const managerToken = await login(base, 'manager@peopleplanner.local');
+    const emptyManagerToken = await login(base, 'manager-empty@peopleplanner.local');
     const employeeToken = await login(base, 'employee@peopleplanner.local');
 
     const forbiddenGlobal = await json(base, '/api/tweaks/global', {
@@ -117,10 +118,17 @@ test('global tweaks are Super Admin only and personal tweaks stay user-scoped', 
     const updatedGlobal = await json(base, '/api/tweaks/global', {
       token: superToken,
       method: 'PATCH',
-      body: { densita: 'comoda', sogliaAssenti: 4 },
+      body: { densita: 'comoda' },
     });
     assert.equal(updatedGlobal.status, 200);
     assert.equal(updatedGlobal.payload.globalTweaks.densita, 'comoda');
+
+    const forbiddenGlobalThreshold = await json(base, '/api/tweaks/global', {
+      token: superToken,
+      method: 'PATCH',
+      body: { sogliaAssenti: 4 },
+    });
+    assert.equal(forbiddenGlobalThreshold.status, 400);
 
     const updatedPersonal = await json(base, '/api/tweaks/me', {
       token: employeeToken,
@@ -136,10 +144,34 @@ test('global tweaks are Super Admin only and personal tweaks stay user-scoped', 
     assert.equal(employeeBootstrap.payload.user.tweaks.densita, 'compatta');
     assert.deepEqual(managerBootstrap.payload.user.tweaks, {});
 
+    const forbiddenEmployeeThreshold = await json(base, '/api/tweaks/me', {
+      token: employeeToken,
+      method: 'PATCH',
+      body: { sogliaRemote: 4 },
+    });
+    assert.equal(forbiddenEmployeeThreshold.status, 403);
+    assert.equal(forbiddenEmployeeThreshold.payload.error, 'BU_MANAGER_ONLY');
+
+    const forbiddenEmptyManagerThreshold = await json(base, '/api/tweaks/me', {
+      token: emptyManagerToken,
+      method: 'PATCH',
+      body: { sogliaAssenti: 4 },
+    });
+    assert.equal(forbiddenEmptyManagerThreshold.status, 403);
+
+    const managerThreshold = await json(base, '/api/tweaks/me', {
+      token: managerToken,
+      method: 'PATCH',
+      body: { sogliaAssenti: 4, sogliaRemote: 5 },
+    });
+    assert.equal(managerThreshold.status, 200);
+    assert.equal(managerThreshold.payload.userTweaks.sogliaAssenti, 4);
+    assert.equal(managerThreshold.payload.userTweaks.sogliaRemote, 5);
+
     const invalid = await json(base, '/api/tweaks/me', {
       token: employeeToken,
       method: 'PATCH',
-      body: { sogliaAssenti: 99 },
+      body: { densita: 'gigante' },
     });
     assert.equal(invalid.status, 400);
 
