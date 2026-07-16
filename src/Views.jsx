@@ -248,10 +248,33 @@ function CoverageBar({ people, getEntries, date }) {
 }
 
 /* ---------- REPERIBILITÀ ---------- */
+function DeleteOperationModal({ title, message, details, onClose, onConfirm }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const close = () => { if (!saving) onClose(); };
+  const confirm = async () => {
+    setSaving(true); setError('');
+    try { await onConfirm(); onClose(); }
+    catch (err) { setError(err.message); setSaving(false); }
+  };
+  return (
+    <Modal title={title} width={460} icon={<Icon name="alert" size={19} color="var(--red)" />} iconBg="var(--red-tint)" onClose={close}
+      footer={<><button className="btn" disabled={saving} onClick={close}>Annulla</button><button className="btn btn-primary" disabled={saving} onClick={confirm}>{saving ? 'Eliminazione…' : 'Elimina definitivamente'}</button></>}>
+      <div style={{ color: 'var(--text-muted)', fontSize: 13.5, lineHeight: 1.55 }}>{message}</div>
+      <div className="card card-pad" style={{ padding: 13, boxShadow: 'none', background: 'var(--surface-2)', display: 'grid', gap: 7 }}>
+        {details.map(([label, value]) => <div key={label} style={{ display: 'grid', gridTemplateColumns: '105px 1fr', gap: 10, fontSize: 12.5 }}><span style={{ color: 'var(--text-faint)', fontWeight: 700 }}>{label}</span><strong>{value}</strong></div>)}
+      </div>
+      <div className="alert-banner alert-red" style={{ padding: '9px 12px', fontSize: 12 }}><Icon name="alert" size={14} /><div>L’operazione rimuoverà anche l’assegnazione collegata dal calendario e non può essere annullata.</div></div>
+      {error && <div className="alert-banner alert-red" style={{ padding: '9px 12px', fontSize: 12 }}><Icon name="alert" size={14} /><div>{error}</div></div>}
+    </Modal>
+  );
+}
+
 export function OnCallView({ scope, buFilter, people = [], bus = BUS, getEntries, onToast, onRefresh, oncall }) {
   const source = Array.isArray(oncall) ? oncall : ONCALL;
   const list = source.filter((o) => !buFilter || o.bu === buFilter);
   const [open, setOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   return (
     <div className="fade-in">
       <SectionHead title="Reperibilità" sub={scope}
@@ -283,11 +306,7 @@ export function OnCallView({ scope, buFilter, people = [], bus = BUS, getEntries
                     ? <span className="badge badge-red"><Icon name="alert" size={11} sw={2.4} />Conflitto assenza</span>
                     : <span className="badge badge-green"><Icon name="check" size={11} sw={2.6} />Confermato</span>}
                   </td>
-                  <td><button className="btn btn-sm btn-danger" title="Elimina reperibilità" onClick={async () => {
-                    if (!window.confirm(`Eliminare la reperibilità ${o.line || 'Base'} di ${p.name}?`)) return;
-                    try { await deleteOnCall(o.id); await onRefresh?.(); onToast('Reperibilità eliminata.'); }
-                    catch (err) { onToast(err.message); }
-                  }}><Icon name="x" size={14} />Elimina</button></td>
+                  <td><button className="btn btn-sm btn-danger" title="Elimina reperibilità" onClick={() => setDeleteTarget({ row: o, person: p })}><Icon name="x" size={14} />Elimina</button></td>
                 </tr>
               );
             })}
@@ -295,6 +314,9 @@ export function OnCallView({ scope, buFilter, people = [], bus = BUS, getEntries
         </table>
       </div>
       {open && <OnCallModal getEntries={getEntries} buFilter={buFilter} people={people} oncall={list} onClose={() => setOpen(false)} onToast={onToast} onRefresh={onRefresh} />}
+      {deleteTarget && <DeleteOperationModal title="Elimina reperibilità" message={<>Stai per eliminare la reperibilità di <strong style={{ color: 'var(--text)' }}>{deleteTarget.person.name}</strong>.</>}
+        details={[["Linea", deleteTarget.row.line || 'Base'], ['Periodo', fmtRange(deleteTarget.row.from, deleteTarget.row.to)], ['Fascia', deleteTarget.row.time]]}
+        onClose={() => setDeleteTarget(null)} onConfirm={async () => { await deleteOnCall(deleteTarget.row.id); await onRefresh?.(); onToast('Reperibilità eliminata.'); }} />}
     </div>
   );
 }
@@ -360,6 +382,7 @@ export function ShiftsView({ scope, buFilter, people = [], bus = BUS, onToast, o
   const list = source.filter((s) => !buFilter || s.bu === buFilter);
   const attention = list.filter((s) => s.status !== 'attivo');
   const [open, setOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   return (
     <div className="fade-in">
       <SectionHead title="Turni operativi" sub={scope}
@@ -385,11 +408,7 @@ export function ShiftsView({ scope, buFilter, people = [], bus = BUS, onToast, o
                   <td className="mono">{s.time}</td>
                   <td className="mono" style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{s.end ? `fino al ${fmtRange(s.end, s.end)}` : 'senza scadenza'}</td>
                   <td>{shiftStatusBadge(s.status)}</td>
-                  <td><button className="btn btn-sm btn-danger" title="Elimina turno" onClick={async () => {
-                    if (!window.confirm(`Eliminare il turno ${s.title}?`)) return;
-                    try { await deleteShift(s.id); await onRefresh?.(); onToast('Turno operativo eliminato.'); }
-                    catch (err) { onToast(err.message); }
-                  }}><Icon name="x" size={14} />Elimina</button></td>
+                  <td><button className="btn btn-sm btn-danger" title="Elimina turno" onClick={() => setDeleteTarget({ row: s, person: p })}><Icon name="x" size={14} />Elimina</button></td>
                 </tr>
               );
             })}
@@ -397,6 +416,9 @@ export function ShiftsView({ scope, buFilter, people = [], bus = BUS, onToast, o
         </table>
       </div>
       {open && <ShiftModal buFilter={buFilter} people={people} onClose={() => setOpen(false)} onToast={onToast} onRefresh={onRefresh} />}
+      {deleteTarget && <DeleteOperationModal title="Elimina turno operativo" message={<>Stai per eliminare il turno <strong style={{ color: 'var(--text)' }}>{deleteTarget.row.title}</strong>.</>}
+        details={[["Assegnato a", deleteTarget.person?.name || 'Nessuno'], ['Giorno', deleteTarget.row.day], ['Fascia', deleteTarget.row.time]]}
+        onClose={() => setDeleteTarget(null)} onConfirm={async () => { await deleteShift(deleteTarget.row.id); await onRefresh?.(); onToast('Turno operativo eliminato.'); }} />}
     </div>
   );
 }
