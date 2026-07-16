@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Icon, Avatar, Pill, Modal, SectionHead } from './components.jsx';
-import { createOnCall, createShift, createPerson, updateClosureAssignment, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, createManagerEmployee, getAdminClosures, createAdminClosure, updateAdminClosure, deleteAdminClosure } from './api.js';
+import { createOnCall, createShift, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, getAdminClosures, createAdminClosure, updateAdminClosure, deleteAdminClosure } from './api.js';
 import { dayConflict } from './Calendar.jsx';
 import {
-  PEOPLE, BUS, SHIFTS, ONCALL, CLOSURES, HOLIDAYS, holidaysFor,
-  person as getPerson, bu as getBU, peopleOf,
+  PEOPLE, BUS, SHIFTS, ONCALL, CLOSURES, holidaysFor,
+  person as getPerson, bu as getBU,
   TODAY, DOW, MONTHS, fmtRange, parse, addDays, iso, mondayOf,
 } from './data.js';
 
@@ -40,7 +40,6 @@ export function Dashboard({ role, meId, people, getEntries, th, notifs, reqs, sh
     const pendingMine = myReqs.filter((r) => r.status === 'pending').length;
     const oncallToday = (oncall || []).filter((o) => o.from <= today && o.to >= today);
     const oncallNow = oncallToday.find((o) => o.empId === meId);
-    const oncallOthers = oncallToday.filter((o) => o.empId !== meId).slice(0, 3);
     const todayShifts = shifts.filter((s) => {
       if (s.status === 'scaduto') return false;
       if (!s.start || s.start > today) return false;
@@ -336,7 +335,7 @@ function OnCallModal({ getEntries, buFilter, people = [], onClose, onToast, onRe
       <div className="field"><label>Fascia oraria</label><input className="input" value={time} onChange={(e) => setTime(e.target.value)} /></div>
       <div className="field"><label>Note (opzionale)</label><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></div>
       {showWarning
-        ? <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>Assegnazione bloccata: il dipendente è in <strong>{blocked}</strong> per l'intero periodo selezionato.</div></div>
+        ? <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>Assegnazione bloccata: il dipendente è in <strong>{blocked}</strong> per l’intero periodo selezionato.</div></div>
         : <div className="alert-banner alert-amber" style={{ fontSize: 12.5, padding: '9px 12px', background: 'var(--c-reper-bg)', borderColor: '#B6E2DE', color: 'var(--c-reper-tx)' }}><Icon name="check" size={15} /><div>Nessun conflitto: il dipendente è disponibile.</div></div>}
     </Modal>
   );
@@ -379,7 +378,7 @@ export function ShiftsView({ scope, buFilter, people = [], bus = BUS, onToast, o
           </tbody>
         </table>
       </div>
-      {open && <ShiftModal buFilter={buFilter} people={people} bus={bus} onClose={() => setOpen(false)} onToast={onToast} onRefresh={onRefresh} />}
+      {open && <ShiftModal buFilter={buFilter} people={people} onClose={() => setOpen(false)} onToast={onToast} onRefresh={onRefresh} />}
     </div>
   );
 }
@@ -391,7 +390,7 @@ const SHIFT_PRESETS = [
   { label: 'Personalizzato', title: '', time: '', days: [] },
 ];
 
-function ShiftModal({ buFilter, people = [], bus, onClose, onToast, onRefresh }) {
+function ShiftModal({ buFilter, people = [], onClose, onToast, onRefresh }) {
   const pool = people.filter((p) => !buFilter || p.bu === buFilter);
   const [empId, setEmpId] = useState(pool[0]?.id || '');
   const [presetIdx, setPresetIdx] = useState(3);
@@ -400,7 +399,6 @@ function ShiftModal({ buFilter, people = [], bus, onClose, onToast, onRefresh })
   const [selectedDays, setSelectedDays] = useState([0,1,2,3,4]);
   const [weekStart, setWeekStart] = useState(iso(mondayOf(TODAY)));
 
-  const preset = SHIFT_PRESETS[presetIdx];
   const isCustom = presetIdx === 3;
 
   const applyPreset = (idx) => {
@@ -470,7 +468,7 @@ function ShiftModal({ buFilter, people = [], bus, onClose, onToast, onRefresh })
 }
 
 /* ---------- CHIUSURE & FESTIVITÀ ---------- */
-export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap = HOLIDAYS, people = PEOPLE, bus = BUS, onToast, onRefresh, canEdit = true }) {
+export function ClosuresView({ scope, closures = CLOSURES, people = PEOPLE, onToast, onRefresh, canEdit = true }) {
   const [expandedGi, setExpandedGi] = useState(null);
   const [gridEdits, setGridEdits] = useState({});
   const [saving, setSaving] = useState(false);
@@ -480,7 +478,7 @@ export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap
   const currentYear = new Date().getFullYear();
   const minYear = allClosureYears.length ? Math.min(allClosureYears[0], currentYear) : currentYear;
   const maxYear = allClosureYears.length ? Math.max(allClosureYears[allClosureYears.length - 1], currentYear + 1) : currentYear + 1;
-  const [selectedYear, setSelectedYear] = useState(Math.max(2026, currentYear));
+  const [selectedYear, setSelectedYear] = useState(currentYear);
 
   // Filter closures for selected year
   const yearPrefix = String(selectedYear);
@@ -517,17 +515,6 @@ export function ClosuresView({ scope, closures = CLOSURES, holidays: holidaysMap
     const idx = current.indexOf(empId);
     const next = idx >= 0 ? current.filter(id => id !== empId) : [...current, empId];
     setGridEdits(prev => ({ ...prev, [closureId]: next }));
-  };
-
-  const setAll = (group, empId, value) => {
-    const edits = {};
-    for (const item of group.items) {
-      const current = getEdit(item.id) ?? [...item.presidio];
-      if (value && !current.includes(empId)) current.push(empId);
-      if (!value) edits[item.id] = current.filter(id => id !== empId);
-      else edits[item.id] = current;
-    }
-    setGridEdits(prev => ({ ...prev, ...edits }));
   };
 
   const setAllFerie = (group) => {
@@ -708,57 +695,45 @@ export function AdminView({ onRefresh, people, bus }) {
   const employees = filteredUsers.filter((u) => u.role === 'EMPLOYEE');
 
   const handleCreateUser = async (data) => {
-    try {
-      await createAdminUser(data);
-      setCreateOpen(false);
-      await loadData();
-      onRefresh?.();
-    } catch (err) { throw err; }
+    await createAdminUser(data);
+    setCreateOpen(false);
+    await loadData();
+    onRefresh?.();
   };
 
   const handleEditUser = async (id, data) => {
-    try {
-      await updateAdminUser(id, data);
-      setEditUser(null);
-      await loadData();
-      onRefresh?.();
-    } catch (err) { throw err; }
+    await updateAdminUser(id, data);
+    setEditUser(null);
+    await loadData();
+    onRefresh?.();
   };
 
   const handleDeleteUser = async (id) => {
-    try {
-      await deleteAdminUser(id);
-      setDeleteConfirm(null);
-      await loadData();
-      onRefresh?.();
-    } catch (err) { throw err; }
+    await deleteAdminUser(id);
+    setDeleteConfirm(null);
+    await loadData();
+    onRefresh?.();
   };
 
   const handleCreateBu = async (data) => {
-    try {
-      await createAdminBu(data);
-      setCreateBuOpen(false);
-      await loadData();
-      onRefresh?.();
-    } catch (err) { throw err; }
+    await createAdminBu(data);
+    setCreateBuOpen(false);
+    await loadData();
+    onRefresh?.();
   };
 
   const handleEditBu = async (id, data) => {
-    try {
-      await updateAdminBu(id, data);
-      setEditBu(null);
-      await loadData();
-      onRefresh?.();
-    } catch (err) { throw err; }
+    await updateAdminBu(id, data);
+    setEditBu(null);
+    await loadData();
+    onRefresh?.();
   };
 
   const handleDeleteBu = async (id) => {
-    try {
-      await deleteAdminBu(id);
-      setDeleteBuConfirm(null);
-      await loadData();
-      onRefresh?.();
-    } catch (err) { throw err; }
+    await deleteAdminBu(id);
+    setDeleteBuConfirm(null);
+    await loadData();
+    onRefresh?.();
   };
 
   const buById = (id) => busData.find((b) => b.id === id);
@@ -1001,7 +976,7 @@ export function IntegrationsView() {
             <div className="field"><label>Group Mapping</label><input className="input" placeholder="CN=Manager → ADMIN, CN=Dipendenti → EMPLOYEE" disabled /></div>
           </div>
           <button className="btn" disabled>Configura LDAP (prossimamente)</button>
-          <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L'integrazione LDAP sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
+          <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L’integrazione LDAP sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
         </div>
 
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1023,7 +998,7 @@ export function IntegrationsView() {
             <div className="field"><label>Scopes</label><input className="input" placeholder="openid, email, profile, directory.user.readonly" disabled /></div>
           </div>
           <button className="btn" disabled>Configura Google Workspace (prossimamente)</button>
-          <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L'integrazione Google Workspace sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
+          <div className="alert-banner alert-amber" style={{ fontSize: 12, padding: '8px 11px' }}><Icon name="alert" size={14} /><div>L’integrazione Google Workspace sarà disponibile in una versione futura. I campi sono indicativi della struttura prevista.</div></div>
         </div>
       </div>
     </div>
@@ -1032,7 +1007,7 @@ export function IntegrationsView() {
 
 export function SuperAdminClosuresView({ onToast }) {
   const [closures, setClosures] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(2026);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showCreate, setShowCreate] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [editLabel, setEditLabel] = useState('');
@@ -1087,15 +1062,6 @@ export function SuperAdminClosuresView({ onToast }) {
       onToast?.('Chiusura aggiornata.');
       setEditItem(null); setClosures(null);
     } catch (e) { setError(e.message); } finally { setSaving(false); }
-  };
-
-  const handleDelete = async (item) => {
-    if (!confirm(`Eliminare la chiusura del ${fmtRange(item.date, item.date)} (${item.label})?`)) return;
-    try {
-      await deleteAdminClosure(item.id);
-      onToast?.('Chiusura eliminata.');
-      setClosures(null);
-    } catch (e) { onToast?.(e.message); }
   };
 
   const handleDeleteGroup = async (group) => {

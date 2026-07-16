@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { bootstrap, login, setToken, getToken, DEMO_CREDENTIALS, decideRequest, createRequest, saveAssignment, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar, createManagerEmployee } from './api.js';
-import { Icon, Avatar, Pill, Popover, Toast, Modal } from './components.jsx';
+import { Icon, Avatar, Pill, Toast, Modal } from './components.jsx';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakSlider, TweakColor } from './TweaksPanel.jsx';
 import { WeekView, DayView, MonthView } from './Calendar.jsx';
 import { RequestsManager, RequestsEmployee } from './Requests.jsx';
@@ -8,7 +8,7 @@ import { Dashboard, OnCallView, ShiftsView, ClosuresView, AdminView, Integration
 import {
   PEOPLE, BUS, REQUESTS, NOTIFS, SHIFTS, ASSIGN, SUPERADMIN,
   TODAY, DOW, MONTHS, iso, parse, addDays, mondayOf,
-  person as getPerson, bu as getBU, peopleOf,
+  person as getPerson, bu as getBU, monthStart,
   holidayName, closure,
 } from './data.js';
 
@@ -24,7 +24,6 @@ const TWEAK_DEFAULTS = {
   colSw: '#2D7FF0',
 };
 
-const ROLE_USER  = { manager: 'e1', dipendente: 'e3', admin: 'admin' };
 const ROLE_LABEL = { manager: 'BU Manager', dipendente: 'Dipendente', admin: 'Super Admin' };
 
 function makeGetEntries(assign, holidays, closures) {
@@ -35,44 +34,6 @@ function makeGetEntries(assign, holidays, closures) {
     if (cl) return cl.presidio.includes(empId) ? [{ type: 'presidio', label: cl.label }] : [{ type: 'chiusura', label: cl.label }];
     return assign[empId + '|' + date] || [];
   };
-}
-
-function RoleSwitcher({ role, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  const cur = role === 'admin' ? SUPERADMIN : getPerson(ROLE_USER[role]);
-  return (
-    <div style={{ position: 'relative' }}>
-      <button className="btn" ref={ref} onClick={() => setOpen((v) => !v)} style={{ paddingLeft: 6 }}>
-        <Avatar p={cur} size={26} />
-        <span style={{ textAlign: 'left', lineHeight: 1.1 }}>
-          <span style={{ display: 'block', fontSize: 13 }}>{cur.name}</span>
-          <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-faint)', fontWeight: 600 }}>{ROLE_LABEL[role]}</span>
-        </span>
-        <Icon name="chevD" size={15} />
-      </button>
-      {open && (
-        <Popover anchorRef={ref} onClose={() => setOpen(false)} width={250}>
-          <div style={{ padding: 7 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '6px 9px 4px' }}>Visualizza come</div>
-            {['manager', 'dipendente', 'admin'].map((r) => {
-              const u = r === 'admin' ? SUPERADMIN : getPerson(ROLE_USER[r]);
-              return (
-                <button key={r} className="nav-item" style={{ color: 'var(--text)', borderRadius: 9 }} onClick={() => { onChange(r); setOpen(false); }}>
-                  <Avatar p={u} size={30} />
-                  <span style={{ flex: 1, textAlign: 'left' }}>
-                    <span style={{ display: 'block', fontWeight: 700, fontSize: 13 }}>{u.name}</span>
-                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{ROLE_LABEL[r]}</span>
-                  </span>
-                  {role === r && <Icon name="check" size={16} color="var(--red)" />}
-                </button>
-              );
-            })}
-          </div>
-        </Popover>
-      )}
-    </div>
-  );
 }
 
 function PanelState({ loading, error, empty, children }) {
@@ -161,7 +122,7 @@ function FaqButton() {
 function LoginScreen({ error, onLogin }) {
   return (
     <div className="app" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', background: 'var(--bg)' }}>
-      <div className="card card-pad" style={{ width: 460, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="card card-pad" style={{ width: 'min(460px, calc(100vw - 32px))', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="brand" style={{ padding: 0 }}>
           <div className="brand-mark">P</div>
           <div><div className="brand-name">People Planner</div><div className="brand-sub">Accesso role-based</div></div>
@@ -183,7 +144,7 @@ function LoginScreen({ error, onLogin }) {
 function CalendarPage({ people, getEntries, onAssign, canEdit, meId, th, showConflicts, vista }) {
   const [view, setView] = useState(vista);
   const [monday, setMonday] = useState(mondayOf(TODAY));
-  const [monthAnchor, setMonthAnchor] = useState(new Date(2026, 4, 1));
+  const [monthAnchor, setMonthAnchor] = useState(monthStart(TODAY));
   const [dayAnchor, setDayAnchor] = useState(iso(TODAY));
   const todayIso = iso(TODAY);
 
@@ -213,7 +174,7 @@ function CalendarPage({ people, getEntries, onAssign, canEdit, meId, th, showCon
           <div style={{ fontWeight: 700, fontSize: 15, minWidth: 200, textAlign: 'center', textTransform: 'capitalize' }}>{label}</div>
           <button className="iconbtn" onClick={() => nav(1)}><Icon name="chevR" size={18} /></button>
         </div>
-        <button className="btn btn-sm" onClick={() => { setMonday(mondayOf(TODAY)); setMonthAnchor(new Date(2026,4,1)); setDayAnchor(iso(TODAY)); }}>Oggi</button>
+        <button className="btn btn-sm" onClick={() => { setMonday(mondayOf(TODAY)); setMonthAnchor(monthStart(TODAY)); setDayAnchor(iso(TODAY)); }}>Oggi</button>
         <div className="spacer"></div>
         <div className="legend" style={{ fontSize: 11 }}>
           <Pill type="ferie" /><Pill type="sw" /><Pill type="reperibilita" /><Pill type="turno" />

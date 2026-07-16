@@ -1,11 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TODAY, iso } from '../../src/data.js';
+import { TODAY, iso, defaultRequestDates, monthStart } from '../../src/data.js';
 import { resetState } from '../store.mjs';
 import { getEntries, todayKey } from '../domain.mjs';
 
 test('frontend TODAY follows the real local date instead of stale demo data', () => {
   assert.equal(iso(TODAY), todayKey());
+});
+
+test('calendar and request defaults follow their reference date', () => {
+  const reference = new Date(2031, 8, 10);
+  assert.equal(iso(monthStart(reference)), '2031-09-01');
+  assert.deepEqual(defaultRequestDates(reference), { from: '2031-09-10', to: '2031-09-12' });
 });
 
 test('2026-06-01 closure renders all Sviluppo Software people as absent', async () => {
