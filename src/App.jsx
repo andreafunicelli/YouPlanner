@@ -5,6 +5,7 @@ import { TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakSlider, TweakC
 import { WeekView, DayView, MonthView } from './Calendar.jsx';
 import { RequestsManager, RequestsEmployee } from './Requests.jsx';
 import { Dashboard, OnCallView, ShiftsView, ClosuresView, AdminView, IntegrationsView, SuperAdminClosuresView } from './Views.jsx';
+import youcoLogo from './assets/logo-youco.svg';
 import {
   PEOPLE, BUS, REQUESTS, NOTIFS, SHIFTS, ASSIGN, SUPERADMIN,
   TODAY, DOW, MONTHS, iso, parse, addDays, mondayOf,
@@ -158,7 +159,7 @@ function LoginScreen({ error, onLogin, config }) {
       <div className="login-shell">
         <section className="login-hero">
           <div className="brand login-brand">
-            <div className="brand-mark">P</div>
+            <span className="brand-logo-box brand-logo-box-lg"><img src={youcoLogo} alt="YouCo" /></span>
             <div><div className="brand-name">People Planner</div><div className="brand-sub">Workforce operations</div></div>
           </div>
           <div className="login-hero-copy">
@@ -171,7 +172,7 @@ function LoginScreen({ error, onLogin, config }) {
 
         <section className="login-panel">
           <div className="login-panel-head">
-            <div className="login-mobile-brand"><span className="brand-mark">P</span><strong>People Planner</strong></div>
+            <div className="login-mobile-brand"><span className="brand-logo-box"><img src={youcoLogo} alt="YouCo" /></span><strong>People Planner</strong></div>
             <span className="login-demo-badge">Ambiente demo</span>
             <h2>Bentornato</h2>
             <p>Accedi con il tuo account aziendale.</p>
@@ -593,7 +594,7 @@ export default function App() {
       {/* Sidebar – variation A */}
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">P</div>
+          <span className="brand-logo-box"><img src={youcoLogo} alt="YouCo" /></span>
           <div><div className="brand-name">People Planner</div><div className="brand-sub">Pianificazione team</div></div>
         </div>
         <nav className="nav"><div className="nav-label">Operatività</div><NavList /></nav>
@@ -615,7 +616,7 @@ export default function App() {
           {/* Top-nav – variation B */}
           <div className="topnav">
             <div className="topnav-brand">
-              <div className="brand-mark" style={{ width:28, height:28, fontSize:15, borderRadius:7 }}>P</div>
+              <span className="brand-logo-box brand-logo-box-sm"><img src={youcoLogo} alt="YouCo" /></span>
               <strong style={{ fontSize:14.5, letterSpacing:'-.02em' }}>People&nbsp;Planner</strong>
             </div>
             <NavList />
