@@ -81,12 +81,24 @@ curl -X POST http://127.0.0.1:4174/api/dev/reset \
 
 ## Deploy con Docker
 
-Build e avvio su un server con Docker/Compose:
+Il file `docker-compose.yml` include build multi-stage, healthcheck, riavvio automatico,
+volume persistente, log rotation e un runtime read-only senza capability Linux.
+
+Build e avvio su un server con Docker Compose:
 
 ```bash
 git clone https://github.com/andreafunicelli/YouPlanner.git
 cd YouPlanner
-docker compose up -d --build
+cp .env.example .env
+docker compose config
+docker compose up -d --build --remove-orphans
+```
+
+Per sicurezza la porta è pubblicata solo su `127.0.0.1` per l'uso dietro reverse
+proxy o tunnel. Per esporla direttamente sulla rete, impostare con cautela in `.env`:
+
+```dotenv
+YOUPLANNER_BIND_ADDRESS=0.0.0.0
 ```
 
 Verifica:
@@ -106,8 +118,16 @@ http://<server-ip>:4174
 Persistenza dati:
 
 ```text
-volume Docker: youplanner-data
+volume Docker: youplanner-data (configurabile con YOUPLANNER_DATA_VOLUME)
 file interno: /data/peopleplanner-db.json
+```
+
+Aggiornamento:
+
+```bash
+git pull --ff-only
+docker compose up -d --build --remove-orphans
+docker image prune -f
 ```
 
 Rollback operativo:
@@ -123,6 +143,18 @@ Backup rapido del volume dati:
 docker run --rm -v youplanner-data:/data -v "$PWD":/backup alpine \
   sh -c 'cp /data/peopleplanner-db.json /backup/peopleplanner-db.$(date +%F_%H%M).json'
 ```
+
+Ripristino del backup (a container fermo):
+
+```bash
+docker compose down
+docker run --rm -v youplanner-data:/data -v "$PWD":/backup alpine \
+  sh -c 'cp /backup/peopleplanner-db.BACKUP.json /data/peopleplanner-db.json'
+docker compose up -d
+```
+
+In produzione `/api/dev/reset` è disabilitato e CORS cross-origin non viene
+attivato; frontend e API restano serviti dallo stesso container.
 
 ## Credenziali demo
 
@@ -178,6 +210,10 @@ Nota: la schermata di login locale contiene scorciatoie di verifica per questi p
   - notifiche reali da `/api/notifications`;
   - FAQ role-aware da `/api/faq`;
   - profilo utente da `/api/profile` e cambio password da `/api/profile/password`.
+- Tweaks:
+  - configurazione globale persistente modificabile solo dal Super Admin;
+  - preferenze personali persistenti per ogni account, con override dei valori globali;
+  - ripristino personale ai valori globali.
 
 ## Regole dominio implementate
 
@@ -209,6 +245,9 @@ Nota: la schermata di login locale contiene scorciatoie di verifica per questi p
 - `GET /api/profile`
 - `PATCH /api/profile`
 - `POST /api/profile/password`
+- `PATCH /api/tweaks/global` (solo Super Admin)
+- `PATCH /api/tweaks/me`
+- `DELETE /api/tweaks/me`
 
 ## Pubblicazione locale Cloudflare
 

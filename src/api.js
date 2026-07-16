@@ -39,6 +39,9 @@ export async function login(email, password) {
 }
 
 export async function bootstrap() { return api('/api/bootstrap'); }
+export async function updateGlobalTweaks(payload) { return api('/api/tweaks/global', { method: 'PATCH', body: JSON.stringify(payload) }); }
+export async function updateMyTweaks(payload) { return api('/api/tweaks/me', { method: 'PATCH', body: JSON.stringify(payload) }); }
+export async function resetMyTweaks() { return api('/api/tweaks/me', { method: 'DELETE' }); }
 export async function getNotifications() { return api('/api/notifications'); }
 export async function getProfile() { return api('/api/profile'); }
 export async function updateProfile(payload) { return api('/api/profile', { method: 'PATCH', body: JSON.stringify(payload) }); }

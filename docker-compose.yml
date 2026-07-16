@@ -1,24 +1,44 @@
+name: youplanner
+
 services:
   youplanner:
-    build: .
-    image: youplanner:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${YOUPLANNER_IMAGE:-youplanner:latest}
     container_name: youplanner
+    init: true
     restart: unless-stopped
+    read_only: true
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 4174
       PEOPLEPLANNER_DB_PATH: /data/peopleplanner-db.json
     ports:
-      - "4174:4174"
+      - "${YOUPLANNER_BIND_ADDRESS:-127.0.0.1}:${YOUPLANNER_PORT:-4174}:4174"
     volumes:
-      - youplanner-data:/data
+      - data:/data
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4174/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  youplanner-data:
+  data:
+    name: ${YOUPLANNER_DATA_VOLUME:-youplanner-data}
