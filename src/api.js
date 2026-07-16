@@ -38,6 +38,27 @@ export async function login(email, password) {
   return data;
 }
 
+export async function getAuthConfig() { return api('/api/auth/config'); }
+
+export async function loginWithLdap(username, password) {
+  const data = await api('/api/auth/ldap', { method: 'POST', body: JSON.stringify({ username, password }) });
+  setToken(data.token);
+  return data;
+}
+
+export async function loginWithGoogle(email) {
+  const data = await api('/api/auth/google', { method: 'POST', body: JSON.stringify({ email }) });
+  setToken(data.token);
+  return data;
+}
+
+export async function logoutSession() {
+  const activeToken = token;
+  setToken('');
+  if (!activeToken) return { ok: true };
+  return api('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${activeToken}` } });
+}
+
 export async function bootstrap() { return api('/api/bootstrap'); }
 export async function updateGlobalTweaks(payload) { return api('/api/tweaks/global', { method: 'PATCH', body: JSON.stringify(payload) }); }
 export async function updateMyTweaks(payload) { return api('/api/tweaks/me', { method: 'PATCH', body: JSON.stringify(payload) }); }

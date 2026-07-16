@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { readState, writeState, resetState } from './store.mjs';
 import { businessDays, clone, getEntries, hasAbsenceOverlap, hasOnCallOverlap, hasFullAbsence, id, scopedState, userScope, daysBetween, todayKey } from './domain.mjs';
 import { DEFAULT_GLOBAL_TWEAKS, THRESHOLD_TWEAK_KEYS, validateTweakEdits } from './tweaks.mjs';
+import { authConfig, authenticateGoogle, authenticateLdap, createSession, resolveSession, revokeSession } from './auth.mjs';
 
 const app = express();
 const PORT = Number(process.env.PORT || 4174);
@@ -20,10 +21,13 @@ function publicUser(state, user) {
 async function requireUser(req, res, next) {
   const state = await readState();
   const token = req.get('authorization')?.replace(/^Bearer\s+/i, '');
-  const user = state.users.find((u) => u.id === token);
+  const session = resolveSession(token);
+  const user = session ? state.users.find((u) => u.id === session.userId) : null;
   if (!user) return res.status(401).json({ error: 'AUTH_REQUIRED', message: 'Login richiesto' });
   req.state = state;
   req.user = user;
+  req.authToken = token;
+  req.authSession = session;
   next();
 }
 
@@ -43,7 +47,28 @@ app.post('/api/login', async (req, res) => {
   const { email, password } = req.body || {};
   const user = state.users.find((u) => u.email === email && u.password === password);
   if (!user) return res.status(401).json({ error: 'BAD_CREDENTIALS', message: 'Credenziali non valide' });
-  res.json({ token: user.id, user: publicUser(state, user) });
+  res.json({ ...createSession(user), user: publicUser(state, user) });
+});
+
+app.get('/api/auth/config', (_req, res) => res.json(authConfig()));
+
+app.post('/api/auth/ldap', async (req, res) => {
+  const state = await readState();
+  const result = authenticateLdap(state, req.body?.username, req.body?.password);
+  if (!result) return res.status(401).json({ error: 'LDAP_BAD_CREDENTIALS', message: 'Credenziali LDAP non valide' });
+  res.json({ ...createSession(result.user, result.provider, result.identity), user: publicUser(state, result.user) });
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  const state = await readState();
+  const result = authenticateGoogle(state, req.body?.email);
+  if (!result) return res.status(401).json({ error: 'GOOGLE_ACCOUNT_DENIED', message: 'Account Google Workspace non autorizzato' });
+  res.json({ ...createSession(result.user, result.provider, result.identity), user: publicUser(state, result.user) });
+});
+
+app.post('/api/auth/logout', requireUser, (req, res) => {
+  revokeSession(req.authToken);
+  res.json({ ok: true });
 });
 
 app.get('/api/bootstrap', requireUser, (req, res) => {
