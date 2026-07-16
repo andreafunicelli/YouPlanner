@@ -24,7 +24,7 @@ const TWEAK_DEFAULTS = {
   colSw: '#2D7FF0',
 };
 
-function TweakControls({ values, onChange, personal = false, onReset }) {
+function TweakControls({ values, onChange, personal = false, allowThresholds = false, onReset }) {
   return <>
     <div style={{ fontSize: 11.5, color: 'rgba(41,38,27,.6)', lineHeight: 1.45 }}>
       {personal ? 'Queste preferenze valgono solo per il tuo account e sovrascrivono i valori globali.' : 'Questi valori diventano il default per tutti gli utenti.'}
@@ -35,8 +35,11 @@ function TweakControls({ values, onChange, personal = false, onReset }) {
     <TweakRadio label="Vista di default" value={values.vista} options={[{value:'settimana',label:'Sett.'},{value:'mese',label:'Mese'},{value:'giorno',label:'Giorno'}]} onChange={(v) => onChange('vista', v)} />
     <TweakSection label="Rilevamento conflitti" />
     <TweakToggle label="Mostra alert conflitti" value={values.mostraConflitti} onChange={(v) => onChange('mostraConflitti', v)} />
-    <TweakSlider label="Soglia assenti" value={values.sogliaAssenti} min={2} max={5} step={1} onChange={(v) => onChange('sogliaAssenti', v)} />
-    <TweakSlider label="Soglia smart working" value={values.sogliaRemote} min={2} max={5} step={1} onChange={(v) => onChange('sogliaRemote', v)} />
+    {allowThresholds && <>
+      <TweakSection label="Soglie operative BU" />
+      <TweakSlider label="Soglia assenti" value={values.sogliaAssenti} min={2} max={5} step={1} onChange={(v) => onChange('sogliaAssenti', v)} />
+      <TweakSlider label="Soglia smart working" value={values.sogliaRemote} min={2} max={5} step={1} onChange={(v) => onChange('sogliaRemote', v)} />
+    </>}
     <TweakSection label="Colori" />
     <TweakColor label="Accento brand" value={values.accento} options={['#E03127','#17120F','#C2185B','#B91C1C']} onChange={(v) => onChange('accento', v)} />
     <TweakColor label="Colore Ferie" value={values.colFerie} options={['#E08A1E','#D97706','#CA8A04','#9A3412']} onChange={(v) => onChange('colFerie', v)} />
@@ -573,7 +576,7 @@ export default function App() {
         <TweakControls values={globalTweaks} onChange={setGlobalTweak} />
       </TweaksPanel>}
       <TweaksPanel title="Tweaks personali" open={personalTweaksOpen} onClose={() => setPersonalTweaksOpen(false)}>
-        <TweakControls values={t} onChange={setPersonalTweak} personal onReset={resetPersonalTweaks} />
+        <TweakControls values={t} onChange={setPersonalTweak} personal allowThresholds={role === 'manager' && !!myBu} onReset={resetPersonalTweaks} />
       </TweaksPanel>
 
       {/* Profile modal rendered at app level, opened from UserMenu */}

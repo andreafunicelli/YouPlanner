@@ -213,6 +213,7 @@ Nota: la schermata di login locale contiene scorciatoie di verifica per questi p
 - Tweaks:
   - configurazione globale persistente modificabile solo dal Super Admin;
   - preferenze personali persistenti per ogni account, con override dei valori globali;
+  - soglie assenti e smart working modificabili esclusivamente dai BU Manager con BU assegnata;
   - ripristino personale ai valori globali.
 
 ## Regole dominio implementate
