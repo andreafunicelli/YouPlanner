@@ -110,9 +110,9 @@ export function seedState() {
       { id:'s4', empId:'e11', title:'Presidio Cloud', bu:'bu3', day:'Lun, Mer, Ven', time:'09:00–18:00', start:'2026-02-01', end:'2026-06-10', status:'scadenza' },
     ],
     oncall: [
-      { id:'o1', empId:'e1', bu:'bu1', from:'2026-05-28', to:'2026-05-29', time:'18:00–08:00', note:'Notturna infrasettimanale' },
-      { id:'o2', empId:'e4', bu:'bu1', from:'2026-05-30', to:'2026-05-31', time:'09:00–21:00', note:'Weekend' },
-      { id:'o3', empId:'e10', bu:'bu3', from:'2026-05-27', to:'2026-05-27', time:'H24', note:'Manutenzione programmata' },
+      { id:'o1', empId:'e1', bu:'bu1', line:'Base', from:'2026-05-28', to:'2026-05-29', time:'18:00–08:00', note:'Notturna infrasettimanale' },
+      { id:'o2', empId:'e4', bu:'bu1', line:'Garofalo', from:'2026-05-30', to:'2026-05-31', time:'09:00–21:00', note:'Weekend' },
+      { id:'o3', empId:'e10', bu:'bu3', line:'Base', from:'2026-05-27', to:'2026-05-27', time:'H24', note:'Manutenzione programmata' },
     ],
   };
 }
@@ -127,6 +127,7 @@ export async function readState() {
         globalTweaks: { ...DEFAULT_GLOBAL_TWEAKS, ...normalizeGlobalTweaks(state.settings?.globalTweaks) },
       },
       users: (state.users || []).map((user) => ({ ...user, tweaks: normalizeTweaks(user.tweaks) })),
+      oncall: (state.oncall || []).map((row, index) => ({ ...row, line: ['Base', 'Garofalo'].includes(row.line) ? row.line : (index % 2 ? 'Garofalo' : 'Base') })),
     };
   } catch {
     const seed = seedState();

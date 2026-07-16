@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { bootstrap, getAuthConfig, loginWithLdap, loginWithGoogle, logoutSession, setToken, getToken, decideRequest, createRequest, saveAssignment, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar, createManagerEmployee, updateGlobalTweaks, updateMyTweaks, resetMyTweaks } from './api.js';
+import { bootstrap, getAuthConfig, loginWithLdap, loginWithGoogle, logoutSession, setToken, getToken, decideRequest, createRequest, saveAssignment, createOnCall, createShift, deleteOnCall, deleteShift, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar, createManagerEmployee, updateGlobalTweaks, updateMyTweaks, resetMyTweaks } from './api.js';
 import { Icon, Avatar, Pill, Toast, Modal } from './components.jsx';
 import { TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakSlider, TweakColor } from './TweaksPanel.jsx';
 import { WeekView, DayView, MonthView } from './Calendar.jsx';
@@ -523,8 +523,40 @@ export default function App() {
   const adminPages = ['persone', 'chiusure', 'integrazioni'];
   const effectivePage = role === 'admin' && !adminPages.includes(page) ? 'persone' : page;
 
-  const doAssign = async (empId, date, entries) => {
+  const doAssign = async (empId, date, entries, removedEntry) => {
     try {
+      if (removedEntry?.type === 'reperibilita') {
+        const source = removedEntry.sourceId
+          ? oncallData.find((item) => item.id === removedEntry.sourceId)
+          : oncallData.find((item) => item.empId === empId && date >= item.from && date <= item.to && (!removedEntry.line || item.line === removedEntry.line));
+        if (!source) throw new Error('Assegnazione di reperibilità non trovata');
+        const data = await deleteOnCall(source.id);
+        applyBootstrap(data.state); setToast(`Reperibilità ${source.line || ''} rimossa.`); return;
+      }
+      if (removedEntry?.type === 'turno') {
+        const source = removedEntry.sourceId
+          ? shiftsData.find((item) => item.id === removedEntry.sourceId)
+          : shiftsData.find((item) => item.empId === empId && date >= item.start && (!item.end || date <= item.end));
+        if (!source) throw new Error('Turno operativo non trovato');
+        const data = await deleteShift(source.id);
+        applyBootstrap(data.state); setToast('Turno operativo rimosso.'); return;
+      }
+      if (removedEntry) {
+        const data = await saveAssignment({ empId, date, entries: [] });
+        applyBootstrap(data); setToast('Assegnazione rimossa.'); return;
+      }
+      const operation = entries[0];
+      if (operation?.type === 'reperibilita') {
+        const from = iso(mondayOf(parse(date)));
+        const data = await createOnCall({ empId, from, line: operation.line || 'Base', time: operation.time || '18:00–08:00' });
+        applyBootstrap(data.state); setToast(`Reperibilità ${operation.line || 'Base'} assegnata per la settimana.`); return;
+      }
+      if (operation?.type === 'turno') {
+        const person = personById(empId);
+        const parsedDate = parse(date);
+        const data = await createShift({ empId, title: operation.title || 'Turno operativo', bu: person.bu, day: DOW[(parsedDate.getDay() + 6) % 7], time: operation.time || '09:00–18:00', start: date, end: date });
+        applyBootstrap(data.state); setToast('Turno operativo assegnato.'); return;
+      }
       const data = await saveAssignment({ empId, date, entries });
       applyBootstrap(data);
       setToast(entries.length ? 'Assegnazione salvata.' : 'Assegnazione rimossa.');

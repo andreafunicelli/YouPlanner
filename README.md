@@ -104,6 +104,16 @@ fittizio `youco.demo`. Le variabili `LDAP_ENABLED`, `GOOGLE_WORKSPACE_ENABLED`,
 la simulazione. Questa implementazione non deve essere considerata un collegamento LDAP/OAuth
 reale: per la produzione servono certificati, segreti e callback dei provider effettivi.
 
+## Reperibilità e turni operativi
+
+Le operazioni sono riservate ai BU Manager e possono essere create o eliminate sia dalle
+rispettive sezioni sia dal pulsante `Assegna` del calendario.
+
+La reperibilità prevede esclusivamente le linee `Base` e `Garofalo`. Per ciascuna Business Unit
+e settimana ogni linea può avere un solo assegnatario. La stessa persona può invece coprire
+entrambe le linee nella medesima settimana. Un tentativo di assegnare una linea già occupata
+restituisce il conflitto `ONCALL_LINE_OCCUPIED` e non modifica la pianificazione.
+
 ## Deploy con Docker
 
 Il file `docker-compose.yml` include build multi-stage, healthcheck, riavvio automatico,

@@ -26,6 +26,8 @@ function CellEditor({ anchorRef, person, date, current, onClose, onSave, onClear
   const init = current && current[0] ? current[0].type : null;
   const [type, setType] = useState(init);
   const [time, setTime] = useState(current && current[0] ? current[0].time || '' : '');
+  const [line, setLine] = useState(current && current[0]?.line ? current[0].line : 'Base');
+  const [title, setTitle] = useState(current && current[0]?.type === 'turno' ? current[0].note || 'Turno operativo' : 'Turno operativo');
   const locked = current && current[0] && ['festa', 'presidio', 'chiusura'].includes(current[0].type);
   const D = parse(date);
   return (
@@ -61,15 +63,27 @@ function CellEditor({ anchorRef, person, date, current, onClose, onSave, onClear
                 <input className="input" value={time} placeholder="es. 09:00–18:00" onChange={(e) => setTime(e.target.value)} />
               </div>
             )}
+            {type === 'reperibilita' && (
+              <div className="field">
+                <label>Linea di reperibilità</label>
+                <select className="input" value={line} onChange={(e) => setLine(e.target.value)}><option value="Base">Base</option><option value="Garofalo">Garofalo</option></select>
+                <small style={{ color: 'var(--text-muted)' }}>L’assegnazione copre l’intera settimana. Una persona può coprire entrambe le linee.</small>
+              </div>
+            )}
+            {type === 'turno' && (
+              <div className="field"><label>Nome turno</label><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Turno operativo" /></div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
               <button className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={!type}
-                onClick={() => { onSave([{ type, time: time || undefined }]); onClose(); }}>
+                onClick={() => { onSave([{ type, time: time || undefined, ...(type === 'reperibilita' ? { line } : {}), ...(type === 'turno' ? { title } : {}) }]); onClose(); }}>
                 Salva
               </button>
-              {current && current.length > 0 && (
-                <button className="btn btn-sm btn-danger" onClick={() => { onClear(); onClose(); }}>Rimuovi</button>
-              )}
             </div>
+            {current && current.length > 0 && <div style={{ display: 'grid', gap: 6 }}>
+              {current.map((entry, index) => <button key={`${entry.type}-${entry.sourceId || index}`} className="btn btn-sm btn-danger" onClick={() => { onClear(entry); onClose(); }}>
+                Rimuovi {entry.type === 'reperibilita' ? `reperibilità ${entry.line || ''}` : STATUS[entry.type]?.label || entry.type}
+              </button>)}
+            </div>}
           </>
         )}
       </div>
@@ -154,7 +168,7 @@ export function WeekView({ people, monday, getEntries, onAssign, canEdit, meId, 
           <CellEditor anchorRef={ref} person={p} date={edit.date} current={getEntries(edit.empId, edit.date)}
             onClose={() => setEdit(null)}
             onSave={(ents) => onAssign(edit.empId, edit.date, ents)}
-            onClear={() => onAssign(edit.empId, edit.date, [])} />
+            onClear={(entry) => onAssign(edit.empId, edit.date, [], entry)} />
         );
       })()}
     </div>

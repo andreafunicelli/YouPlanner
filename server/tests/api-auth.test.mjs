@@ -78,7 +78,7 @@ test('manager scope blocks operational writes outside assigned BU', async () => 
     const outsideAssignment = await json(base, '/api/assignments', {
       token: managerToken,
       method: 'POST',
-      body: { empId: 'e8', date: '2026-06-10', entries: [{ type: 'turno', time: '09:00–18:00' }] },
+      body: { empId: 'e8', date: '2026-06-10', entries: [{ type: 'sw' }] },
     });
     assert.equal(outsideAssignment.status, 403);
     assert.equal(outsideAssignment.payload.error, 'FORBIDDEN');
@@ -205,7 +205,7 @@ test('backend validates bad payloads and blocks absence/on-call conflicts', asyn
     const oncallConflict = await json(base, '/api/oncall', {
       token: managerToken,
       method: 'POST',
-      body: { empId: 'e2', from: '2026-06-08', to: '2026-06-12', time: '18:00–08:00' },
+      body: { empId: 'e2', from: '2026-06-08', to: '2026-06-12', time: '18:00–08:00', line: 'Base' },
     });
     assert.equal(oncallConflict.status, 409);
     assert.equal(oncallConflict.payload.error, 'ABSENCE_CONFLICT');
@@ -235,7 +235,7 @@ test('SuperAdmin is blocked from operational endpoints', async () => {
     const oncall = await json(base, '/api/oncall', {
       token: superToken,
       method: 'POST',
-      body: { empId: 'e4', from: '2026-07-01', time: '18:00–08:00' },
+      body: { empId: 'e4', from: '2026-07-01', time: '18:00–08:00', line: 'Base' },
     });
     assert.equal(oncall.status, 403);
     assert.equal(oncall.payload.error, 'SUPERADMIN_NOT_ALLOWED');
@@ -271,7 +271,7 @@ test('on-call allows assignment during closures but blocks full-week ferie', asy
     const oncallDuringClosure = await json(base, '/api/oncall', {
       token: managerToken,
       method: 'POST',
-      body: { empId: 'e4', from: '2026-08-10', to: '2026-08-16', time: '18:00–08:00' },
+      body: { empId: 'e4', from: '2026-08-10', to: '2026-08-16', time: '18:00–08:00', line: 'Base' },
     });
     assert.equal(oncallDuringClosure.status, 201);
     assert.ok(oncallDuringClosure.payload.oncall);
@@ -281,7 +281,7 @@ test('on-call allows assignment during closures but blocks full-week ferie', asy
     const oncallFullFerie = await json(base, '/api/oncall', {
       token: managerToken,
       method: 'POST',
-      body: { empId: 'e3', from: '2026-06-09', to: '2026-06-10', time: '18:00–08:00' },
+      body: { empId: 'e3', from: '2026-06-09', to: '2026-06-10', time: '18:00–08:00', line: 'Garofalo' },
     });
     assert.equal(oncallFullFerie.status, 409);
     assert.equal(oncallFullFerie.payload.error, 'ABSENCE_CONFLICT');
@@ -290,7 +290,7 @@ test('on-call allows assignment during closures but blocks full-week ferie', asy
     const oncallAutoEnd = await json(base, '/api/oncall', {
       token: managerToken,
       method: 'POST',
-      body: { empId: 'e4', from: '2026-07-06', time: '18:00–08:00' },
+      body: { empId: 'e4', from: '2026-07-06', time: '18:00–08:00', line: 'Base' },
     });
     assert.equal(oncallAutoEnd.status, 201);
     assert.equal(oncallAutoEnd.payload.oncall.from, '2026-07-06');
@@ -346,6 +346,68 @@ test('shift preset creation works', async () => {
     });
     assert.equal(badPreset.status, 400);
     assert.equal(badPreset.payload.error, 'BAD_PRESET');
+  });
+});
+
+test('on-call lines enforce one assignee per BU/week while allowing the same person on both lines', async () => {
+  await resetState();
+  await withServer(async (base) => {
+    const managerToken = await login(base, 'manager@peopleplanner.local');
+    const first = await json(base, '/api/oncall', {
+      token: managerToken,
+      method: 'POST',
+      body: { empId: 'e4', from: '2026-09-07', line: 'Base', time: '18:00–08:00' },
+    });
+    assert.equal(first.status, 201);
+    assert.equal(first.payload.oncall.line, 'Base');
+
+    const occupied = await json(base, '/api/oncall', {
+      token: managerToken,
+      method: 'POST',
+      body: { empId: 'e3', from: '2026-09-09', line: 'Base', time: '18:00–08:00' },
+    });
+    assert.equal(occupied.status, 409);
+    assert.equal(occupied.payload.error, 'ONCALL_LINE_OCCUPIED');
+    assert.equal(occupied.payload.conflict.weekStart, '2026-09-07');
+
+    const secondLine = await json(base, '/api/oncall', {
+      token: managerToken,
+      method: 'POST',
+      body: { empId: 'e4', from: '2026-09-07', line: 'Garofalo', time: '18:00–08:00' },
+    });
+    assert.equal(secondLine.status, 201);
+    assert.equal(secondLine.payload.oncall.empId, 'e4');
+    const mondayEntries = secondLine.payload.state.assign['e4|2026-09-07'];
+    assert.equal(mondayEntries.filter((entry) => entry.type === 'reperibilita').length, 2);
+
+    const removed = await json(base, `/api/oncall/${first.payload.oncall.id}`, { token: managerToken, method: 'DELETE' });
+    assert.equal(removed.status, 200);
+    assert.equal(removed.payload.state.oncall.some((item) => item.id === first.payload.oncall.id), false);
+    assert.equal(removed.payload.state.assign['e4|2026-09-07'].filter((entry) => entry.type === 'reperibilita').length, 1);
+  });
+});
+
+test('BU manager can create and delete a calendar-backed operational shift', async () => {
+  await resetState();
+  await withServer(async (base) => {
+    const managerToken = await login(base, 'manager@peopleplanner.local');
+    const employeeToken = await login(base, 'employee@peopleplanner.local');
+    const created = await json(base, '/api/shifts', {
+      token: managerToken,
+      method: 'POST',
+      body: { empId: 'e4', title: 'Turno calendario', bu: 'bu1', day: 'Lun', time: '09:00–18:00', start: '2026-09-14', end: '2026-09-14' },
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.payload.state.assign['e4|2026-09-14'][0].sourceId, created.payload.shift.id);
+
+    const forbidden = await json(base, `/api/shifts/${created.payload.shift.id}`, { token: employeeToken, method: 'DELETE' });
+    assert.equal(forbidden.status, 403);
+    assert.equal(forbidden.payload.error, 'ADMIN_ONLY');
+
+    const removed = await json(base, `/api/shifts/${created.payload.shift.id}`, { token: managerToken, method: 'DELETE' });
+    assert.equal(removed.status, 200);
+    assert.equal(removed.payload.state.shifts.some((item) => item.id === created.payload.shift.id), false);
+    assert.equal(removed.payload.state.assign['e4|2026-09-14'], undefined);
   });
 });
 

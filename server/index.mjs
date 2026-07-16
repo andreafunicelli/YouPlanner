@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { readState, writeState, resetState } from './store.mjs';
-import { businessDays, clone, getEntries, hasAbsenceOverlap, hasOnCallOverlap, hasFullAbsence, id, scopedState, userScope, daysBetween, todayKey } from './domain.mjs';
+import { businessDays, clone, getEntries, hasAbsenceOverlap, hasFullAbsence, id, scopedState, userScope, daysBetween, todayKey } from './domain.mjs';
 import { DEFAULT_GLOBAL_TWEAKS, THRESHOLD_TWEAK_KEYS, validateTweakEdits } from './tweaks.mjs';
 import { authConfig, authenticateGoogle, authenticateLdap, createSession, resolveSession, revokeSession } from './auth.mjs';
 
@@ -34,6 +34,21 @@ async function requireUser(req, res, next) {
 const canOperateTeam = (state, user, bu) => user.role === 'ADMIN' && userScope(state, user).teamIds.includes(bu);
 const isDateKey = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 const isRange = (from, to) => isDateKey(from) && isDateKey(to) && to >= from;
+const ONCALL_LINES = ['Base', 'Garofalo'];
+const weekStartKey = (value) => {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+};
+const removeSourceAssignments = (state, sourceId, fallback) => {
+  Object.entries(state.assign).forEach(([key, entries]) => {
+    const filtered = entries.filter((entry) => entry.sourceId
+      ? entry.sourceId !== sourceId
+      : !fallback(key, entry));
+    if (filtered.length) state.assign[key] = filtered;
+    else delete state.assign[key];
+  });
+};
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, app: 'peopleplanner', now: new Date().toISOString() }));
 
@@ -129,7 +144,7 @@ app.post('/api/assignments', requireUser, async (req, res) => {
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ADMIN_ONLY', message: 'Solo i manager possono modificare assegnazioni operative' });
   const { empId, date, entries } = req.body || {};
   if (!empId || !isDateKey(date) || !Array.isArray(entries)) return res.status(400).json({ error: 'BAD_INPUT', message: 'Dipendente, data e lista assegnazioni sono obbligatori' });
-  if (!entries.every((e) => ['turno', 'sw', 'ferie', 'permesso', 'malattia', 'reperibilita'].includes(e.type))) return res.status(400).json({ error: 'BAD_ASSIGNMENT_TYPE', message: 'Tipo assegnazione non valido' });
+  if (!entries.every((e) => ['sw', 'ferie', 'permesso', 'malattia'].includes(e.type))) return res.status(400).json({ error: 'BAD_ASSIGNMENT_TYPE', message: 'Turni e reperibilità devono essere gestiti tramite le rispettive operazioni' });
   const emp = req.state.people.find((p) => p.id === empId);
   if (!emp || !canOperateTeam(req.state, req.user, emp.bu)) return res.status(403).json({ error: 'FORBIDDEN', message: 'Dipendente fuori ambito' });
   if (req.state.holidays[date] || req.state.closures.some((c) => c.date === date)) return res.status(409).json({ error: 'LOCKED_DAY', message: 'Festività/chiusura non modificabile come assegnazione manuale' });
@@ -193,8 +208,9 @@ app.post('/api/requests/:id/decision', requireUser, async (req, res) => {
 app.post('/api/oncall', requireUser, async (req, res) => {
   if (req.user.role === 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_NOT_ALLOWED', message: 'Super Admin non può assegnare reperibilità' });
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ADMIN_ONLY', message: 'Solo i manager possono assegnare reperibilità' });
-  let { empId, from, to, time, note } = req.body || {};
+  let { empId, from, to, time, note, line } = req.body || {};
   if (!empId || !isDateKey(from)) return res.status(400).json({ error: 'BAD_DATES', message: 'Dipendente e data di inizio validi sono obbligatori' });
+  if (!ONCALL_LINES.includes(line)) return res.status(400).json({ error: 'BAD_ONCALL_LINE', message: 'La linea deve essere Base o Garofalo' });
   if (!to) {
     const d = new Date(from + 'T00:00:00');
     d.setDate(d.getDate() + 6);
@@ -203,14 +219,37 @@ app.post('/api/oncall', requireUser, async (req, res) => {
   if (!isRange(from, to)) return res.status(400).json({ error: 'BAD_DATES', message: 'Intervallo date non valido' });
   const emp = req.state.people.find((p) => p.id === empId);
   if (!emp || !canOperateTeam(req.state, req.user, emp.bu)) return res.status(403).json({ error: 'FORBIDDEN', message: 'Dipendente fuori ambito' });
-  if (hasOnCallOverlap(req.state, empId, from, to)) return res.status(409).json({ error: 'ONCALL_OVERLAP', message: 'Reperibilità già assegnata nel periodo' });
+  const weekStart = weekStartKey(from);
+  const occupied = req.state.oncall.find((item) => item.bu === emp.bu && item.line === line && weekStartKey(item.from) === weekStart);
+  if (occupied) {
+    const assigned = req.state.people.find((person) => person.id === occupied.empId)?.name || 'un altro dipendente';
+    return res.status(409).json({ error: 'ONCALL_LINE_OCCUPIED', message: `Linea ${line} già assegnata a ${assigned} per la settimana selezionata`, conflict: { line, weekStart, empId: occupied.empId } });
+  }
   if (hasFullAbsence(req.state, empId, from, to)) return res.status(409).json({ error: 'ABSENCE_CONFLICT', message: 'Il dipendente è in ferie/malattia per tutto il periodo selezionato' });
   const next = clone(req.state);
-  const row = { id: id('o'), empId, bu: emp.bu, from, to, time: time || '18:00–08:00', note: note || '' };
+  const row = { id: id('o'), empId, bu: emp.bu, line, weekStart, from, to, time: time || '18:00–08:00', note: note || '' };
   next.oncall.unshift(row);
-  daysBetween(from, to).forEach((d) => { next.assign[`${empId}|${d}`] = [{ type: 'reperibilita', time: row.time, note: row.note }]; });
+  daysBetween(from, to).forEach((d) => {
+    const key = `${empId}|${d}`;
+    next.assign[key] = [...(next.assign[key] || []), { type: 'reperibilita', time: row.time, note: row.note || line, line, sourceId: row.id }];
+  });
   await writeState(next);
   res.status(201).json({ oncall: row, state: scopedState(next, publicUser(next, req.user)) });
+});
+
+app.delete('/api/oncall/:id', requireUser, async (req, res) => {
+  if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ADMIN_ONLY', message: 'Solo i manager possono eliminare reperibilità' });
+  const row = req.state.oncall.find((item) => item.id === req.params.id);
+  if (!row) return res.status(404).json({ error: 'NOT_FOUND', message: 'Reperibilità non trovata' });
+  if (!canOperateTeam(req.state, req.user, row.bu)) return res.status(403).json({ error: 'FORBIDDEN', message: 'Reperibilità fuori ambito' });
+  const next = clone(req.state);
+  next.oncall = next.oncall.filter((item) => item.id !== row.id);
+  removeSourceAssignments(next, row.id, (key, entry) => {
+    const [empId, date] = key.split('|');
+    return empId === row.empId && date >= row.from && date <= row.to && entry.type === 'reperibilita' && (!entry.line || entry.line === row.line);
+  });
+  await writeState(next);
+  res.json({ ok: true, state: scopedState(next, publicUser(next, req.user)) });
 });
 
 app.post('/api/shifts', requireUser, async (req, res) => {
@@ -244,8 +283,24 @@ app.post('/api/shifts', requireUser, async (req, res) => {
   const next = clone(req.state);
   const row = { id: id('s'), empId: empId || null, title, bu, day, time, start, end: end || null, status: empId ? 'attivo' : 'scoperto' };
   next.shifts.unshift(row);
+  if (empId && start === end) {
+    const key = `${empId}|${start}`;
+    next.assign[key] = [...(next.assign[key] || []).filter((entry) => entry.type !== 'turno'), { type: 'turno', time, note: title, sourceId: row.id }];
+  }
   await writeState(next);
   res.status(201).json({ shift: row, state: scopedState(next, publicUser(next, req.user)) });
+});
+
+app.delete('/api/shifts/:id', requireUser, async (req, res) => {
+  if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ADMIN_ONLY', message: 'Solo i manager possono eliminare turni operativi' });
+  const row = req.state.shifts.find((item) => item.id === req.params.id);
+  if (!row) return res.status(404).json({ error: 'NOT_FOUND', message: 'Turno non trovato' });
+  if (!canOperateTeam(req.state, req.user, row.bu)) return res.status(403).json({ error: 'FORBIDDEN', message: 'Turno fuori ambito' });
+  const next = clone(req.state);
+  next.shifts = next.shifts.filter((item) => item.id !== row.id);
+  removeSourceAssignments(next, row.id, () => false);
+  await writeState(next);
+  res.json({ ok: true, state: scopedState(next, publicUser(next, req.user)) });
 });
 
 // --- SUPER ADMIN: Users CRUD ---

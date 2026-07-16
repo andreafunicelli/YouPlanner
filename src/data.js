@@ -193,10 +193,10 @@ export const SHIFTS = [
 ];
 
 export const ONCALL = [
-  { id:'o1', empId:'e1',  bu:'bu1', from:'2026-05-28', to:'2026-05-29', time:'18:00–08:00', note:'Notturna infrasettimanale' },
-  { id:'o2', empId:'e4',  bu:'bu1', from:'2026-05-30', to:'2026-05-31', time:'09:00–21:00', note:'Weekend' },
-  { id:'o3', empId:'e10', bu:'bu3', from:'2026-05-27', to:'2026-05-27', time:'H24',         note:'Manutenzione programmata' },
-  { id:'o4', empId:'e6',  bu:'bu2', from:'2026-05-29', to:'2026-05-29', time:'16:00–24:00', note:'' },
+  { id:'o1', empId:'e1',  bu:'bu1', line:'Base', from:'2026-05-28', to:'2026-05-29', time:'18:00–08:00', note:'Notturna infrasettimanale' },
+  { id:'o2', empId:'e4',  bu:'bu1', line:'Garofalo', from:'2026-05-30', to:'2026-05-31', time:'09:00–21:00', note:'Weekend' },
+  { id:'o3', empId:'e10', bu:'bu3', line:'Base', from:'2026-05-27', to:'2026-05-27', time:'H24',         note:'Manutenzione programmata' },
+  { id:'o4', empId:'e6',  bu:'bu2', line:'Base', from:'2026-05-29', to:'2026-05-29', time:'16:00–24:00', note:'' },
 ];
 
 export const NOTIFS = [
