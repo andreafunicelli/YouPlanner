@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Icon, Avatar, Pill, Modal, SectionHead } from './components.jsx';
-import { STATUS, person as getPerson, bu as getBU, peopleOf, fmtRange, parse, addDays, iso, TODAY, holidayName, closure } from './data.js';
+import { STATUS, person as getPerson, bu as getBU, peopleOf, fmtRange, parse, addDays, iso, TODAY, holidayName, closure, defaultRequestDates } from './data.js';
 
 function reqStatusBadge(s) {
   if (s === 'pending')  return <span className="badge badge-amber"><Icon name="clock" size={11} sw={2.4} />In attesa</span>;
@@ -81,7 +81,7 @@ function RequestCard({ req, getEntries, onApprove, onReject, canDecide = true })
         </div>
       </div>
 
-      {req.note && <div style={{ fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic' }}>"{req.note}"</div>}
+      {req.note && <div style={{ fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic' }}>“{req.note}”</div>}
 
       {(req.flagHoliday || overlaps.length >= 2 || insufficient) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -159,10 +159,11 @@ export function RequestsManager({ reqs, getEntries, onApprove, onReject, scope, 
 }
 
 function ManagerCreateRequestModal({ people, onClose, onSubmit }) {
+  const initialDates = defaultRequestDates();
   const [empId, setEmpId] = useState(people[0]?.id || '');
   const [type, setType] = useState('ferie');
-  const [from, setFrom] = useState('2026-06-15');
-  const [to, setTo] = useState('2026-06-17');
+  const [from, setFrom] = useState(initialDates.from);
+  const [to, setTo] = useState(initialDates.to);
   const [time, setTime] = useState('14:00–18:00');
   const [note, setNote] = useState('');
 
@@ -268,9 +269,10 @@ export function RequestsEmployee({ me, reqs, onSubmit }) {
 }
 
 function NewRequestModal({ me, onClose, onSubmit }) {
+  const initialDates = defaultRequestDates();
   const [type, setType] = useState('ferie');
-  const [from, setFrom] = useState('2026-06-15');
-  const [to, setTo]     = useState('2026-06-17');
+  const [from, setFrom] = useState(initialDates.from);
+  const [to, setTo]     = useState(initialDates.to);
   const [time, setTime] = useState('14:00–18:00');
   const [note, setNote] = useState('');
 

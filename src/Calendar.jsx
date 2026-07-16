@@ -162,7 +162,6 @@ export function WeekView({ people, monday, getEntries, onAssign, canEdit, meId, 
 }
 
 export function DayView({ people, date, getEntries, th, showConflicts }) {
-  const D = parse(date);
   const c = dayConflict(people, date, getEntries, th);
   const holidayEntry = getEntries('__holiday__', date)[0];
   const present = people.filter((p) => {

@@ -6,6 +6,11 @@ export const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDa
 export const mondayOf = (d) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const wd = (x.getDay() + 6) % 7; return addDays(x, -wd); };
 
 export const TODAY = new Date();
+export const monthStart = (date = TODAY) => new Date(date.getFullYear(), date.getMonth(), 1);
+export const defaultRequestDates = (date = TODAY) => ({
+  from: iso(date),
+  to: iso(addDays(date, 2)),
+});
 
 export const DOW = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 export const MONTHS = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
