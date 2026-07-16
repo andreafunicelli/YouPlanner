@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon, Avatar, Pill, Modal, SectionHead } from './components.jsx';
-import { createOnCall, createShift, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, getAdminClosures, createAdminClosure, updateAdminClosure, deleteAdminClosure, getAuthConfig } from './api.js';
+import { createOnCall, createShift, deleteOnCall, deleteShift, bulkUpdateClosureAssignments, getAdminUsers, getAdminBus, createAdminUser, updateAdminUser, deleteAdminUser, createAdminBu, updateAdminBu, deleteAdminBu, getAdminClosures, createAdminClosure, updateAdminClosure, deleteAdminClosure, getAuthConfig } from './api.js';
 import { dayConflict } from './Calendar.jsx';
 import {
   PEOPLE, BUS, SHIFTS, ONCALL, CLOSURES, holidaysFor,
@@ -258,9 +258,9 @@ export function OnCallView({ scope, buFilter, people = [], bus = BUS, getEntries
         right={<button className="btn btn-primary" onClick={() => setOpen(true)}><Icon name="plus" size={16} sw={2.4} />Assegna turno</button>} />
       <div className="card">
         <table className="tbl">
-          <thead><tr><th>Persona</th><th>Periodo</th><th>Fascia</th><th>Note</th><th>Stato</th></tr></thead>
+          <thead><tr><th>Linea</th><th>Persona</th><th>Periodo</th><th>Fascia</th><th>Note</th><th>Stato</th><th></th></tr></thead>
           <tbody>
-            {list.length === 0 && <tr><td colSpan="5" className="empty">Nessuna reperibilità nello scope corrente.</td></tr>}
+            {list.length === 0 && <tr><td colSpan="7" className="empty">Nessuna reperibilità nello scope corrente.</td></tr>}
             {list.map((o) => {
               const p = people.find((x) => x.id === o.empId) || getPerson(o.empId);
               const onLeave = (() => {
@@ -271,6 +271,7 @@ export function OnCallView({ scope, buFilter, people = [], bus = BUS, getEntries
               })();
               return (
                 <tr key={o.id}>
+                  <td><span className="badge badge-gray">{o.line || 'Base'}</span></td>
                   <td><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Avatar p={p} size={32} />
                     <div><div style={{ fontWeight: 700 }}>{p.name}</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{(bus.find((b) => b.id === o.bu) || getBU(o.bu))?.name}</div></div>
@@ -282,23 +283,29 @@ export function OnCallView({ scope, buFilter, people = [], bus = BUS, getEntries
                     ? <span className="badge badge-red"><Icon name="alert" size={11} sw={2.4} />Conflitto assenza</span>
                     : <span className="badge badge-green"><Icon name="check" size={11} sw={2.6} />Confermato</span>}
                   </td>
+                  <td><button className="btn btn-sm btn-danger" title="Elimina reperibilità" onClick={async () => {
+                    if (!window.confirm(`Eliminare la reperibilità ${o.line || 'Base'} di ${p.name}?`)) return;
+                    try { await deleteOnCall(o.id); await onRefresh?.(); onToast('Reperibilità eliminata.'); }
+                    catch (err) { onToast(err.message); }
+                  }}><Icon name="x" size={14} />Elimina</button></td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-      {open && <OnCallModal getEntries={getEntries} buFilter={buFilter} people={people} onClose={() => setOpen(false)} onToast={onToast} onRefresh={onRefresh} />}
+      {open && <OnCallModal getEntries={getEntries} buFilter={buFilter} people={people} oncall={list} onClose={() => setOpen(false)} onToast={onToast} onRefresh={onRefresh} />}
     </div>
   );
 }
 
-function OnCallModal({ getEntries, buFilter, people = [], onClose, onToast, onRefresh }) {
+function OnCallModal({ getEntries, buFilter, people = [], oncall = [], onClose, onToast, onRefresh }) {
   const pool = people.filter((p) => !buFilter || p.bu === buFilter);
   const [empId, setEmpId] = useState(pool[0]?.id || '');
   const [from, setFrom] = useState(iso(mondayOf(addDays(TODAY, (8 - ((TODAY.getDay() + 6) % 7)) % 7 || 7))));
   const [time, setTime] = useState('18:00–08:00');
   const [note, setNote] = useState('');
+  const [line, setLine] = useState('Base');
 
   if (!pool.length) return (
     <Modal title="Assegna reperibilità" icon={<Icon name="phone" size={19} color="var(--c-reper)" />} iconBg="var(--c-reper-bg)" onClose={onClose} footer={<button className="btn" onClick={onClose}>Chiudi</button>}>
@@ -316,13 +323,17 @@ function OnCallModal({ getEntries, buFilter, people = [], onClose, onToast, onRe
     else { allLeave = false; }
   }
   const showWarning = allLeave && hasAnyLeave;
+  const selectedWeek = iso(mondayOf(parse(from)));
+  const emp = pool.find((person) => person.id === empId);
+  const occupied = oncall.find((item) => item.bu === emp?.bu && (item.line || 'Base') === line && iso(mondayOf(parse(item.from))) === selectedWeek);
 
   return (
     <Modal title="Assegna reperibilità" icon={<Icon name="phone" size={19} color="var(--c-reper)" />} iconBg="var(--c-reper-bg)" onClose={onClose}
       footer={<>
         <button className="btn" onClick={onClose}>Annulla</button>
-        <button className="btn btn-primary" disabled={showWarning} onClick={async () => { try { await createOnCall({ empId, from, time, note }); await onRefresh?.(); onToast('Turno di reperibilità assegnato.'); onClose(); } catch (err) { onToast(err.message); } }}>Assegna</button>
+        <button className="btn btn-primary" disabled={showWarning || !!occupied} onClick={async () => { try { await createOnCall({ empId, from, time, note, line }); await onRefresh?.(); onToast(`Reperibilità ${line} assegnata.`); onClose(); } catch (err) { onToast(err.message); } }}>Assegna</button>
       </>}>
+      <div className="field"><label>Linea di reperibilità</label><select className="input" value={line} onChange={(e) => setLine(e.target.value)}><option value="Base">Base</option><option value="Garofalo">Garofalo</option></select></div>
       <div className="field"><label>Dipendente</label>
         <select className="input" value={empId} onChange={(e) => setEmpId(e.target.value)}>
           {pool.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.job}</option>)}
@@ -334,9 +345,11 @@ function OnCallModal({ getEntries, buFilter, people = [], onClose, onToast, onRe
       </div>
       <div className="field"><label>Fascia oraria</label><input className="input" value={time} onChange={(e) => setTime(e.target.value)} /></div>
       <div className="field"><label>Note (opzionale)</label><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></div>
-      {showWarning
+      {occupied
+        ? <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>Linea <strong>{line}</strong> già assegnata a <strong>{people.find((person) => person.id === occupied.empId)?.name || 'un altro dipendente'}</strong> per questa settimana. Puoi usare l’altra linea o eliminare prima l’assegnazione esistente.</div></div>
+        : showWarning
         ? <div className="alert-banner alert-red" style={{ fontSize: 12.5, padding: '9px 12px' }}><Icon name="alert" size={15} /><div>Assegnazione bloccata: il dipendente è in <strong>{blocked}</strong> per l’intero periodo selezionato.</div></div>
-        : <div className="alert-banner alert-amber" style={{ fontSize: 12.5, padding: '9px 12px', background: 'var(--c-reper-bg)', borderColor: '#B6E2DE', color: 'var(--c-reper-tx)' }}><Icon name="check" size={15} /><div>Nessun conflitto: il dipendente è disponibile.</div></div>}
+        : <div className="alert-banner alert-amber" style={{ fontSize: 12.5, padding: '9px 12px', background: 'var(--c-reper-bg)', borderColor: '#B6E2DE', color: 'var(--c-reper-tx)' }}><Icon name="check" size={15} /><div>Linea {line} disponibile. Lo stesso dipendente può essere assegnato anche all’altra linea.</div></div>}
     </Modal>
   );
 }
@@ -359,9 +372,9 @@ export function ShiftsView({ scope, buFilter, people = [], bus = BUS, onToast, o
       )}
       <div className="card">
         <table className="tbl">
-          <thead><tr><th>Turno</th><th>Assegnato a</th><th>Giorni</th><th>Fascia</th><th>Validità</th><th>Stato</th></tr></thead>
+          <thead><tr><th>Turno</th><th>Assegnato a</th><th>Giorni</th><th>Fascia</th><th>Validità</th><th>Stato</th><th></th></tr></thead>
           <tbody>
-            {list.length === 0 && <tr><td colSpan="6" className="empty">Nessun turno nello scope corrente.</td></tr>}
+            {list.length === 0 && <tr><td colSpan="7" className="empty">Nessun turno nello scope corrente.</td></tr>}
             {list.map((s) => {
               const p = s.empId ? (people.find((x) => x.id === s.empId) || getPerson(s.empId)) : null;
               return (
@@ -372,6 +385,11 @@ export function ShiftsView({ scope, buFilter, people = [], bus = BUS, onToast, o
                   <td className="mono">{s.time}</td>
                   <td className="mono" style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{s.end ? `fino al ${fmtRange(s.end, s.end)}` : 'senza scadenza'}</td>
                   <td>{shiftStatusBadge(s.status)}</td>
+                  <td><button className="btn btn-sm btn-danger" title="Elimina turno" onClick={async () => {
+                    if (!window.confirm(`Eliminare il turno ${s.title}?`)) return;
+                    try { await deleteShift(s.id); await onRefresh?.(); onToast('Turno operativo eliminato.'); }
+                    catch (err) { onToast(err.message); }
+                  }}><Icon name="x" size={14} />Elimina</button></td>
                 </tr>
               );
             })}

@@ -71,6 +71,8 @@ export async function createRequest(payload) { return api('/api/requests', { met
 export async function saveAssignment(payload) { return api('/api/assignments', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function createOnCall(payload) { return api('/api/oncall', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function createShift(payload) { return api('/api/shifts', { method: 'POST', body: JSON.stringify(payload) }); }
+export async function deleteOnCall(id) { return api(`/api/oncall/${id}`, { method: 'DELETE' }); }
+export async function deleteShift(id) { return api(`/api/shifts/${id}`, { method: 'DELETE' }); }
 export async function createPerson(payload) { return api('/api/admin/people', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function getAdminUsers() { return api('/api/admin/users'); }
 export async function createAdminUser(payload) { return api('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }); }
