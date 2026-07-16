@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { holidaysFor, clone } from './domain.mjs';
+import { DEFAULT_TWEAKS, normalizeTweaks } from './tweaks.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DB_PATH = process.env.PEOPLEPLANNER_DB_PATH || path.join(__dirname, 'peopleplanner-db.json');
@@ -39,6 +40,7 @@ export function seedState() {
   set('e7','2026-05-25',[E('turno',{time:'08:00–16:00'})]); set('e8','2026-05-25',[E('turno',{time:'14:00–22:00'})]); set('e9','2026-05-25',[E('sw')]);
   set('e11','2026-05-25',[E('turno',{time:'09:00–18:00'})]); set('e12','2026-05-25',[E('sw')]); set('e13','2026-05-26',[E('ferie')]);
   return {
+    settings: { globalTweaks: { ...DEFAULT_TWEAKS } },
     users: [
       { id:'u-super', email:'superadmin@peopleplanner.local', password:'demo123', role:'SUPER_ADMIN', employeeId:null, name:'Anna Vitali', job:'Super Admin', initials:'AV', av:'#17120F' },
       { id:'u-admin1', email:'manager@peopleplanner.local', password:'demo123', role:'ADMIN', employeeId:'e1' },
@@ -117,7 +119,15 @@ export function seedState() {
 
 export async function readState() {
   try {
-    return JSON.parse(await fs.readFile(DB_PATH, 'utf8'));
+    const state = JSON.parse(await fs.readFile(DB_PATH, 'utf8'));
+    return {
+      ...state,
+      settings: {
+        ...(state.settings || {}),
+        globalTweaks: { ...DEFAULT_TWEAKS, ...normalizeTweaks(state.settings?.globalTweaks) },
+      },
+      users: (state.users || []).map((user) => ({ ...user, tweaks: normalizeTweaks(user.tweaks) })),
+    };
   } catch {
     const seed = seedState();
     await writeState(seed);

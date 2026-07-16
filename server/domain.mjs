@@ -104,6 +104,7 @@ export function scopedState(state, user) {
       holidays: state.holidays,
       assign: {},
       notifications: [],
+      globalTweaks: state.settings?.globalTweaks || {},
     };
   }
   const people = scope.all ? state.people : state.people.filter((p) => scope.employeeIds.includes(p.id));
@@ -120,6 +121,7 @@ export function scopedState(state, user) {
     holidays: state.holidays,
     assign: Object.fromEntries(Object.entries(state.assign).filter(([key]) => empIds.has(key.split('|')[0]))),
     notifications: notificationsFor(state, user),
+    globalTweaks: state.settings?.globalTweaks || {},
   };
 }
 

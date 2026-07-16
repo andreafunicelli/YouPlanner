@@ -99,6 +99,56 @@ test('manager without BU receives an empty operational bootstrap', async () => {
   });
 });
 
+test('global tweaks are Super Admin only and personal tweaks stay user-scoped', async () => {
+  await resetState();
+  await withServer(async (base) => {
+    const superToken = await login(base, 'superadmin@peopleplanner.local');
+    const managerToken = await login(base, 'manager@peopleplanner.local');
+    const employeeToken = await login(base, 'employee@peopleplanner.local');
+
+    const forbiddenGlobal = await json(base, '/api/tweaks/global', {
+      token: managerToken,
+      method: 'PATCH',
+      body: { densita: 'compatta' },
+    });
+    assert.equal(forbiddenGlobal.status, 403);
+    assert.equal(forbiddenGlobal.payload.error, 'SUPERADMIN_ONLY');
+
+    const updatedGlobal = await json(base, '/api/tweaks/global', {
+      token: superToken,
+      method: 'PATCH',
+      body: { densita: 'comoda', sogliaAssenti: 4 },
+    });
+    assert.equal(updatedGlobal.status, 200);
+    assert.equal(updatedGlobal.payload.globalTweaks.densita, 'comoda');
+
+    const updatedPersonal = await json(base, '/api/tweaks/me', {
+      token: employeeToken,
+      method: 'PATCH',
+      body: { densita: 'compatta', vista: 'mese' },
+    });
+    assert.equal(updatedPersonal.status, 200);
+    assert.deepEqual(updatedPersonal.payload.userTweaks, { densita: 'compatta', vista: 'mese' });
+
+    const employeeBootstrap = await json(base, '/api/bootstrap', { token: employeeToken });
+    const managerBootstrap = await json(base, '/api/bootstrap', { token: managerToken });
+    assert.equal(employeeBootstrap.payload.globalTweaks.densita, 'comoda');
+    assert.equal(employeeBootstrap.payload.user.tweaks.densita, 'compatta');
+    assert.deepEqual(managerBootstrap.payload.user.tweaks, {});
+
+    const invalid = await json(base, '/api/tweaks/me', {
+      token: employeeToken,
+      method: 'PATCH',
+      body: { sogliaAssenti: 99 },
+    });
+    assert.equal(invalid.status, 400);
+
+    const reset = await json(base, '/api/tweaks/me', { token: employeeToken, method: 'DELETE' });
+    assert.equal(reset.status, 200);
+    assert.deepEqual(reset.payload.userTweaks, {});
+  });
+});
+
 test('backend validates bad payloads and blocks absence/on-call conflicts', async () => {
   await resetState();
   await withServer(async (base) => {

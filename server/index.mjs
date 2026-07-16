@@ -3,10 +3,12 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { readState, writeState, resetState } from './store.mjs';
 import { businessDays, clone, getEntries, hasAbsenceOverlap, hasOnCallOverlap, hasFullAbsence, id, scopedState, userScope, daysBetween, todayKey } from './domain.mjs';
+import { DEFAULT_TWEAKS, validateTweakEdits } from './tweaks.mjs';
 
 const app = express();
 const PORT = Number(process.env.PORT || 4174);
-app.use(cors());
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+if (!IS_PRODUCTION) app.use(cors());
 app.use(express.json());
 
 function publicUser(state, user) {
@@ -31,7 +33,10 @@ const isRange = (from, to) => isDateKey(from) && isDateKey(to) && to >= from;
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, app: 'peopleplanner', now: new Date().toISOString() }));
 
-app.post('/api/dev/reset', async (_req, res) => res.json({ ok: true, state: await resetState() }));
+app.post('/api/dev/reset', async (_req, res) => {
+  if (IS_PRODUCTION) return res.status(404).json({ error: 'NOT_FOUND', message: 'Endpoint non disponibile' });
+  res.json({ ok: true, state: await resetState() });
+});
 
 app.post('/api/login', async (req, res) => {
   const state = await readState();
@@ -43,6 +48,37 @@ app.post('/api/login', async (req, res) => {
 
 app.get('/api/bootstrap', requireUser, (req, res) => {
   res.json({ ...scopedState(req.state, publicUser(req.state, req.user)), allBus: req.user.role === 'SUPER_ADMIN' ? req.state.bus : undefined });
+});
+
+app.patch('/api/tweaks/global', requireUser, async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPERADMIN_ONLY', message: 'Solo il Super Admin può modificare i Tweaks globali' });
+  const edits = validateTweakEdits(req.body);
+  if (!edits) return res.status(400).json({ error: 'BAD_TWEAKS', message: 'Configurazione Tweaks non valida' });
+  const next = clone(req.state);
+  next.settings = {
+    ...(next.settings || {}),
+    globalTweaks: { ...DEFAULT_TWEAKS, ...(next.settings?.globalTweaks || {}), ...edits },
+  };
+  await writeState(next);
+  res.json({ globalTweaks: next.settings.globalTweaks, userTweaks: next.users.find((u) => u.id === req.user.id)?.tweaks || {} });
+});
+
+app.patch('/api/tweaks/me', requireUser, async (req, res) => {
+  const edits = validateTweakEdits(req.body);
+  if (!edits) return res.status(400).json({ error: 'BAD_TWEAKS', message: 'Configurazione Tweaks non valida' });
+  const next = clone(req.state);
+  next.users = next.users.map((user) => user.id === req.user.id
+    ? { ...user, tweaks: { ...(user.tweaks || {}), ...edits } }
+    : user);
+  await writeState(next);
+  res.json({ globalTweaks: next.settings?.globalTweaks || DEFAULT_TWEAKS, userTweaks: next.users.find((u) => u.id === req.user.id)?.tweaks || {} });
+});
+
+app.delete('/api/tweaks/me', requireUser, async (req, res) => {
+  const next = clone(req.state);
+  next.users = next.users.map((user) => user.id === req.user.id ? { ...user, tweaks: {} } : user);
+  await writeState(next);
+  res.json({ globalTweaks: next.settings?.globalTweaks || DEFAULT_TWEAKS, userTweaks: {} });
 });
 
 app.get('/api/dashboard', requireUser, (req, res) => {

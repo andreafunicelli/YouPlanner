@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { bootstrap, login, setToken, getToken, DEMO_CREDENTIALS, decideRequest, createRequest, saveAssignment, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar, createManagerEmployee } from './api.js';
+import { bootstrap, login, setToken, getToken, DEMO_CREDENTIALS, decideRequest, createRequest, saveAssignment, getFaq, getNotifications, getProfile, updateProfile, changePassword, uploadAvatar, createManagerEmployee, updateGlobalTweaks, updateMyTweaks, resetMyTweaks } from './api.js';
 import { Icon, Avatar, Pill, Toast, Modal } from './components.jsx';
-import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakSlider, TweakColor } from './TweaksPanel.jsx';
+import { TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakSlider, TweakColor } from './TweaksPanel.jsx';
 import { WeekView, DayView, MonthView } from './Calendar.jsx';
 import { RequestsManager, RequestsEmployee } from './Requests.jsx';
 import { Dashboard, OnCallView, ShiftsView, ClosuresView, AdminView, IntegrationsView, SuperAdminClosuresView } from './Views.jsx';
@@ -23,6 +23,27 @@ const TWEAK_DEFAULTS = {
   colFerie: '#E08A1E',
   colSw: '#2D7FF0',
 };
+
+function TweakControls({ values, onChange, personal = false, onReset }) {
+  return <>
+    <div style={{ fontSize: 11.5, color: 'rgba(41,38,27,.6)', lineHeight: 1.45 }}>
+      {personal ? 'Queste preferenze valgono solo per il tuo account e sovrascrivono i valori globali.' : 'Questi valori diventano il default per tutti gli utenti.'}
+    </div>
+    <TweakSection label="Direzione visiva" />
+    <TweakRadio label="Layout" value={values.direzione} options={[{value:'A',label:'Arioso'},{value:'B',label:'Denso'}]} onChange={(v) => onChange('direzione', v)} />
+    <TweakRadio label="Densità calendario" value={values.densita} options={[{value:'compatta',label:'Compatta'},{value:'standard',label:'Standard'},{value:'comoda',label:'Comoda'}]} onChange={(v) => onChange('densita', v)} />
+    <TweakRadio label="Vista di default" value={values.vista} options={[{value:'settimana',label:'Sett.'},{value:'mese',label:'Mese'},{value:'giorno',label:'Giorno'}]} onChange={(v) => onChange('vista', v)} />
+    <TweakSection label="Rilevamento conflitti" />
+    <TweakToggle label="Mostra alert conflitti" value={values.mostraConflitti} onChange={(v) => onChange('mostraConflitti', v)} />
+    <TweakSlider label="Soglia assenti" value={values.sogliaAssenti} min={2} max={5} step={1} onChange={(v) => onChange('sogliaAssenti', v)} />
+    <TweakSlider label="Soglia smart working" value={values.sogliaRemote} min={2} max={5} step={1} onChange={(v) => onChange('sogliaRemote', v)} />
+    <TweakSection label="Colori" />
+    <TweakColor label="Accento brand" value={values.accento} options={['#E03127','#17120F','#C2185B','#B91C1C']} onChange={(v) => onChange('accento', v)} />
+    <TweakColor label="Colore Ferie" value={values.colFerie} options={['#E08A1E','#D97706','#CA8A04','#9A3412']} onChange={(v) => onChange('colFerie', v)} />
+    <TweakColor label="Colore Smart working" value={values.colSw} options={['#2D7FF0','#0E9D94','#7C5CF0','#0EA5E9']} onChange={(v) => onChange('colSw', v)} />
+    {personal && <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={onReset}>Ripristina valori globali</button>}
+  </>;
+}
 
 const ROLE_LABEL = { manager: 'BU Manager', dipendente: 'Dipendente', admin: 'Super Admin' };
 
@@ -301,8 +322,10 @@ function ProfileModal({ onClose, onUserUpdate, onToast }) {
 }
 
 export default function App() {
-  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [globalTweaks, setGlobalTweaks] = useState({ ...TWEAK_DEFAULTS });
+  const [personalTweaks, setPersonalTweaks] = useState({});
+  const [globalTweaksOpen, setGlobalTweaksOpen] = useState(false);
+  const [personalTweaksOpen, setPersonalTweaksOpen] = useState(false);
   const [apiUser, setApiUser] = useState(null);
   const [loading, setLoading] = useState(!!getToken());
   const [error, setError] = useState(null);
@@ -320,9 +343,12 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [createEmpOpen, setCreateEmpOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const t = { ...globalTweaks, ...personalTweaks };
 
   const applyBootstrap = (data) => {
     setApiUser(data.user);
+    setGlobalTweaks({ ...TWEAK_DEFAULTS, ...(data.globalTweaks || {}) });
+    setPersonalTweaks({ ...(data.user?.tweaks || {}) });
     setPeopleData(data.people || []);
     setBusData(data.allBus || data.bus || []);
     setReqs((data.requests || []).map((r) => ({ ...r })));
@@ -356,7 +382,42 @@ export default function App() {
     finally { setLoading(false); }
   };
 
-  const logout = () => { setToken(''); setApiUser(null); setPage('dashboard'); };
+  const logout = () => {
+    setToken(''); setApiUser(null); setPage('dashboard');
+    setGlobalTweaks({ ...TWEAK_DEFAULTS }); setPersonalTweaks({});
+    setGlobalTweaksOpen(false); setPersonalTweaksOpen(false);
+  };
+
+  const setGlobalTweak = (key, value) => {
+    const previous = globalTweaks[key];
+    setGlobalTweaks((current) => ({ ...current, [key]: value }));
+    updateGlobalTweaks({ [key]: value }).catch((err) => {
+      setGlobalTweaks((current) => ({ ...current, [key]: previous }));
+      setToast(err.message);
+    });
+  };
+
+  const setPersonalTweak = (key, value) => {
+    const hadPrevious = Object.prototype.hasOwnProperty.call(personalTweaks, key);
+    const previous = personalTweaks[key];
+    setPersonalTweaks((current) => ({ ...current, [key]: value }));
+    updateMyTweaks({ [key]: value }).catch((err) => {
+      setPersonalTweaks((current) => {
+        const next = { ...current };
+        if (hadPrevious) next[key] = previous;
+        else delete next[key];
+        return next;
+      });
+      setToast(err.message);
+    });
+  };
+
+  const resetPersonalTweaks = async () => {
+    const previous = personalTweaks;
+    setPersonalTweaks({});
+    try { await resetMyTweaks(); setToast('Preferenze personali ripristinate.'); }
+    catch (err) { setPersonalTweaks(previous); setToast(err.message); }
+  };
 
   useEffect(() => {
     const r = document.documentElement;
@@ -479,9 +540,13 @@ export default function App() {
             </div>
           )}
 
-          <button className="iconbtn" title="Tweaks" onClick={() => setTweaksOpen((v) => !v)}
-            style={{ color: tweaksOpen ? 'var(--red)' : undefined }}>
+          {role === 'admin' && <button className="iconbtn" title="Tweaks globali" onClick={() => { setGlobalTweaksOpen((v) => !v); setPersonalTweaksOpen(false); }}
+            style={{ color: globalTweaksOpen ? 'var(--red)' : undefined }}>
             <Icon name="sliders" size={18} />
+          </button>}
+          <button className="iconbtn" title="Tweaks personali" onClick={() => { setPersonalTweaksOpen((v) => !v); setGlobalTweaksOpen(false); }}
+            style={{ color: personalTweaksOpen ? 'var(--red)' : undefined }}>
+            <Icon name="settings" size={18} />
           </button>
 
           <FaqButton />
@@ -504,19 +569,11 @@ export default function App() {
         </main>
       </div>
 
-      <TweaksPanel title="Tweaks" open={tweaksOpen} onClose={() => setTweaksOpen(false)}>
-        <TweakSection label="Direzione visiva" />
-        <TweakRadio label="Layout" value={t.direzione} options={[{value:'A',label:'Arioso'},{value:'B',label:'Denso'}]} onChange={(v) => setTweak('direzione', v)} />
-        <TweakRadio label="Densità calendario" value={t.densita} options={[{value:'compatta',label:'Compatta'},{value:'standard',label:'Standard'},{value:'comoda',label:'Comoda'}]} onChange={(v) => setTweak('densita', v)} />
-        <TweakRadio label="Vista di default" value={t.vista} options={[{value:'settimana',label:'Sett.'},{value:'mese',label:'Mese'},{value:'giorno',label:'Giorno'}]} onChange={(v) => setTweak('vista', v)} />
-        <TweakSection label="Rilevamento conflitti" />
-        <TweakToggle label="Mostra alert conflitti" value={t.mostraConflitti} onChange={(v) => setTweak('mostraConflitti', v)} />
-        <TweakSlider label="Soglia assenti" value={t.sogliaAssenti} min={2} max={5} step={1} onChange={(v) => setTweak('sogliaAssenti', v)} />
-        <TweakSlider label="Soglia smart working" value={t.sogliaRemote} min={2} max={5} step={1} onChange={(v) => setTweak('sogliaRemote', v)} />
-        <TweakSection label="Colori" />
-        <TweakColor label="Accento brand" value={t.accento} options={['#E03127','#17120F','#C2185B','#B91C1C']} onChange={(v) => setTweak('accento', v)} />
-        <TweakColor label="Colore Ferie" value={t.colFerie} options={['#E08A1E','#D97706','#CA8A04','#9A3412']} onChange={(v) => setTweak('colFerie', v)} />
-        <TweakColor label="Colore Smart working" value={t.colSw} options={['#2D7FF0','#0E9D94','#7C5CF0','#0EA5E9']} onChange={(v) => setTweak('colSw', v)} />
+      {role === 'admin' && <TweaksPanel title="Tweaks globali" open={globalTweaksOpen} onClose={() => setGlobalTweaksOpen(false)}>
+        <TweakControls values={globalTweaks} onChange={setGlobalTweak} />
+      </TweaksPanel>}
+      <TweaksPanel title="Tweaks personali" open={personalTweaksOpen} onClose={() => setPersonalTweaksOpen(false)}>
+        <TweakControls values={t} onChange={setPersonalTweak} personal onReset={resetPersonalTweaks} />
       </TweaksPanel>
 
       {/* Profile modal rendered at app level, opened from UserMenu */}
